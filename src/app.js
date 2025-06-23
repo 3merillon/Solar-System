@@ -712,29 +712,34 @@ export class RetroSolarSystemApp {
         const gl = this.gl;
         gl.clearColor(0.02, 0.02, 0.08, 1.0);
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-        
+
         gl.enable(gl.DEPTH_TEST);
         gl.depthFunc(gl.LESS);
         gl.enable(gl.CULL_FACE);
         gl.enable(gl.BLEND);
         gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
+        const near = 0.01;
+        const far = 20000.0;
         const viewMatrix = this.camera.getViewMatrix();
         const projMatrix = this.renderer.perspective(
             Math.PI / 3,
             gl.canvas.width / gl.canvas.height,
-            0.01,
-            20000.0
+            near,
+            far
         );
+        const logDepthBufFC = 2.0 / (Math.log(far + 1.0) / Math.LN2);
 
-        // Render skybox first (before other objects, without depth writes)
+        this.renderer.logDepthBufFC = logDepthBufFC;
+        if (this.lineRenderer) this.lineRenderer.logDepthBufFC = logDepthBufFC;
+        this.renderer.ringSystem.setLogDepthBufFC(logDepthBufFC);
+
+        // Render skybox first
         if (this.showSkybox) {
             this.skyboxRenderer.render(viewMatrix, projMatrix);
         }
 
         const viewProjMatrix = mat4MultiplyViewProj(viewMatrix, projMatrix);
-        
-        // CAMERA-CENTERED: Get sun position in camera-relative coordinates
         const sunWorldPosition = this.solarSystem.getSunPosition();
         const sunCameraRelativePosition = this.camera.worldToCameraRelative(sunWorldPosition);
 
@@ -745,22 +750,23 @@ export class RetroSolarSystemApp {
         let totalFrustumCulled = 0;
         let totalBackfaceCulled = 0;
 
-        // CAMERA-CENTERED: Pass camera reference to frustum culler
+        // COLLECT RING DATA while rendering planets
+        const ringDataArray = [];
+
         for (const body of this.solarSystem.getAllBodies()) {
             if (this.frustumCuller.isPlanetVisible(body, viewProjMatrix, this.camera)) {
                 visiblePlanets++;
                 
-                // CAMERA-CENTERED: Pass camera world position and camera-relative sun position
                 const stats = this.renderer.renderBody(
                     body,
-                    this.camera.worldPosition, // Camera world position for distance calculations
+                    this.camera.worldPosition,
                     this.camera.forward,
                     viewMatrix,
                     projMatrix,
                     this.animateWaves ? this.waveTime : 0,
                     this.showLod,
                     this.animateWaves,
-                    sunCameraRelativePosition, // Camera-relative sun position
+                    sunCameraRelativePosition,
                     this.maxLod
                 );
 
@@ -771,6 +777,11 @@ export class RetroSolarSystemApp {
                     totalFrustumCulled += stats.cullStats.frustumCulled;
                     totalBackfaceCulled += stats.cullStats.backfaceCulled;
                 }
+
+                // COLLECT RING DATA
+                if (stats.ringData) {
+                    ringDataArray.push(stats.ringData);
+                }
             } else {
                 culledPlanets++;
             }
@@ -778,17 +789,13 @@ export class RetroSolarSystemApp {
 
         // Render orbits and axes
         if (this.showAxisOrbit) {
-            // FIXED: Proper depth state management for lines
             gl.disable(gl.CULL_FACE);
             gl.lineWidth(2);
-            
-            // Enable depth testing but disable depth writing for lines
             gl.enable(gl.DEPTH_TEST);
             gl.depthFunc(gl.LEQUAL);
 
             for (const body of this.solarSystem.getAllBodies()) {
                 if (this.frustumCuller.isPlanetVisible(body, viewProjMatrix, this.camera)) {
-                    // CAMERA-CENTERED: Camera reference is already set on lineRenderer
                     this.lineRenderer.renderAxis(body, viewMatrix, projMatrix);
                     this.lineRenderer.renderOrbit(body, viewMatrix, projMatrix, this.solarSystem.time);
                 } else {
@@ -796,9 +803,13 @@ export class RetroSolarSystemApp {
                 }
             }
 
-            // FIXED: Restore proper depth state
             gl.enable(gl.CULL_FACE);
             gl.depthFunc(gl.LESS);
+        }
+
+        // RENDER ALL RINGS AFTER ALL CELESTIAL BODIES
+        if (ringDataArray.length > 0) {
+            this.renderer.ringSystem.renderAllRings(ringDataArray);
         }
 
         // Update performance stats

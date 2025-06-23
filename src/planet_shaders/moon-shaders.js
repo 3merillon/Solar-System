@@ -12,6 +12,7 @@ uniform mat3 uNormalMatrix;
 uniform float uPlanetRadius;
 uniform float uNoiseScale;
 uniform float uNoiseOffset;
+uniform float uLogDepthBufFC;
 
 out vec3 vPos;
 out vec3 vWorldPos;
@@ -187,7 +188,7 @@ void main() {
 
     gl_Position = uProj * uView * uModel * vec4(vPos, 1.0);
     vLogDepth = 1.0 + gl_Position.w;
-    gl_Position.z = log2(max(1e-6, vLogDepth)) * 2.0 / (log(1000.0 + 1.0)/log(2.0)) - 1.0;
+    gl_Position.z = log2(max(1e-6, vLogDepth)) * uLogDepthBufFC - 1.0;
     gl_Position.z *= gl_Position.w;
 }
 `;
@@ -207,6 +208,7 @@ out vec4 fragColor;
 
 uniform vec3 uCameraPos;
 uniform vec3 uSunPosition;
+uniform float uLogDepthBufFC;
 
 vec3 getMoonColor(vec3 localPos) {
     // Maria coloring is a subtle blue-gray tint, not dark
@@ -221,7 +223,7 @@ vec3 getMoonColor(vec3 localPos) {
 }
 
 void main() {
-    gl_FragDepth = log2(vLogDepth) * 2.0 / (log(1000.0 + 1.0)/log(2.0)) * 0.5;
+    gl_FragDepth = log2(vLogDepth) * uLogDepthBufFC * 0.5;
     vec3 N = normalize(vWorldNormal);
     vec3 L = normalize(uSunPosition - vWorldPos);
     vec3 V = normalize(uCameraPos - vWorldPos);
@@ -252,5 +254,6 @@ export function createMoonUniformSetup() {
         gl.uniform1f(uniforms.uNoiseOffset, body.noiseOffset || 0.0);
         gl.uniform3fv(uniforms.uCameraPos, new Float32Array(cameraPos));
         gl.uniform3fv(uniforms.uSunPosition, new Float32Array(sunPosition));
+        gl.uniform1f(uniforms.uLogDepthBufFC, logDepthBufFC); // <--- ADD THIS
     };
 }

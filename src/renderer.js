@@ -2,6 +2,7 @@ import { mat4Multiply, mat4RotateX, mat4Identity } from './utils.js';
 import { ShaderManager } from './shader-manager.js';
 import { sunVertexShaderSource, sunFragmentShaderSource, createSunUniformSetup } from './planet_shaders/sun-shaders.js';
 import { setupPlanetShaders } from './planet-shaders-setup.js';
+import { RingSystem } from './ring-system.js';
 import { 
     logDepthVertexShaderSource, 
     logDepthFragmentShaderSource, 
@@ -17,7 +18,7 @@ export class LineRenderer {
         this.setupBuffers();
         
         // Calculate logarithmic depth constant for 10x scale
-        this.logDepthBufFC = 2.0 / (Math.log(10000.0 + 1.0) / Math.LN2);
+        this.logDepthBufFC = 2.0 / (Math.log(20000.0 + 1.0) / Math.LN2);
     }
 
     // Add method to set camera reference
@@ -780,7 +781,9 @@ export class ScreenSpaceGPULODRenderer {
         // Store camera reference
         this.camera = null;
         
-        // Adjusted for 10x scale
+        // Initialize ring system
+        this.ringSystem = new RingSystem(gl);
+        
         this.near = 0.0001;
         this.far = 10000.0;
         this.logDepthBufFC = 2.0 / (Math.log(this.far + 1.0) / Math.LN2);
@@ -791,6 +794,8 @@ export class ScreenSpaceGPULODRenderer {
         this.setupCustomShaders();
         this.setupBuffers();
         this.stats = { patches: 0, drawCalls: 0, vertices: 0, totalPatches: 0 };
+
+        this.ringSystem = new RingSystem(gl);
         
         this.geometryCache = new Map();
         this.frameCount = 0;
@@ -825,6 +830,9 @@ export class ScreenSpaceGPULODRenderer {
     // Add method to set camera reference
     setCamera(camera) {
         this.camera = camera;
+        this.ringSystem.setCamera(camera);
+        // Sync logarithmic depth constant
+        this.ringSystem.setLogDepthBufFC(this.logDepthBufFC);
     }
 
     setupCustomShaders() {
@@ -1225,7 +1233,7 @@ export class ScreenSpaceGPULODRenderer {
         // Check if camera is available
         if (!this.camera) {
             console.error('Camera not set on renderer. Call setCamera() first.');
-            return { patches: 0, vertices: 0, cullStats: this.cullStats };
+            return { patches: 0, vertices: 0, cullStats: this.cullStats, ringData: null };
         }
         
         // CAMERA-CENTERED: Convert all positions to camera-relative coordinates
@@ -1362,6 +1370,7 @@ export class ScreenSpaceGPULODRenderer {
         // CAMERA-CENTERED: Pass camera at origin and camera-relative sun position
         uniformSetup(gl, uniforms, cameraRelativeBody, [0, 0, 0], viewMatrix, projMatrix, time, showLod, animateWaves, cameraRelativeSunPos, this.logDepthBufFC);
         
+        // RENDER THE PLANET
         gl.drawElements(gl.TRIANGLES, indexCount, gl.UNSIGNED_INT, 0);
         gl.bindVertexArray(null);
         
@@ -1370,10 +1379,14 @@ export class ScreenSpaceGPULODRenderer {
         // Calculate patches count from geometry if not already available
         const patchCount = patches ? patches.length : Math.floor(geometry.I.length / 12);
         
+        // COLLECT RING DATA for deferred rendering (instead of rendering rings immediately)
+        const ringData = this.ringSystem.collectRingData(body, viewMatrix, projMatrix, time, sunPosition);
+        
         return { 
             patches: patchCount, 
             vertices: geometry.V.length / 3,
-            cullStats: this.cullStats
+            cullStats: this.cullStats,
+            ringData: ringData  // Return ring data for deferred rendering
         };
     }
     
