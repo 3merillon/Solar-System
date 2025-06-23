@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Solar System Explorer</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<!-- Scientific HUD -->
+<div id="crosshair"></div>
+
+<!-- Dockable Music Panel with Pull Tab -->
+<div id="musicPanel" class="scientific-panel music-panel">
+  <!-- Fixed Header -->
+  <div class="panel-header-fixed">
+    <div class="panel-title">🎵 STELLAR SOUNDSCAPE</div>
+  </div>
+  
+  <!-- Pull Tab (positioned outside but part of container) -->
+  <div class="panel-pull-tab music-pull-tab" id="musicPanelToggle">
+    <div class="tab-icon">▼</div>
+  </div>
+  
+  <!-- Scrollable Content -->
+  <div class="panel-content">
+    <!-- Audio Controls Section -->
+    <div class="control-section">
+      <div class="audio-controls-grid">
+        <button class="audio-button" id="audioPlayButton">▶️ Play Music</button>
+        <button class="audio-button" id="audioSeedButton">🎲 New Track</button>
+      </div>
+      <div class="audio-slider-row">
+        <span class="audio-label">Volume:</span>
+        <input type="range" class="audio-slider" id="audioVolumeSlider" min="0" max="100" value="40">
+        <span class="audio-value" id="audioVolumeValue">40%</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Info Panel with Pull Tab -->
+<div id="infoPanel" class="scientific-panel info-panel">
+  <!-- Fixed Header -->
+  <div class="panel-header-fixed">
+    <div class="panel-title">TELEMETRY</div>
+  </div>
+  
+  <!-- Pull Tab (positioned outside but part of container) -->
+  <div class="panel-pull-tab info-pull-tab" id="infoPanelToggle">
+    <div class="tab-icon">▶</div>
+  </div>
+  
+  <!-- Scrollable Content -->
+  <div class="panel-content">
+    <!-- Performance -->
+    <div class="control-section">
+      <div class="section-title">⚡ Performance</div>
+      <div class="control-row">
+        <span class="control-label">FPS:</span>
+        <span class="control-value" id="fpsCounter">60</span>
+      </div>
+      <div class="control-row">
+        <span class="control-label">Frame Time:</span>
+        <span class="control-value" id="frameTime">16.7ms</span>
+      </div>
+      <div class="control-row">
+        <span class="control-label">Patches:</span>
+        <span class="control-value" id="patchCount">0</span>
+      </div>
+      <div class="control-row">
+        <span class="control-label">Vertices:</span>
+        <span class="control-value" id="vertexCount">0</span>
+      </div>
+      <div class="control-row">
+          <span class="control-label">Visible:</span>
+          <span class="control-value" id="visibleCount">0</span>
+      </div>
+      <div class="control-row">
+          <span class="control-label">Culled:</span>
+          <span class="control-value" id="culledCount">0</span>
+      </div>
+      <div class="control-row">
+          <span class="control-label">Frustum Culled:</span>
+          <span class="control-value" id="frustumCulledCount">0</span>
+      </div>
+      <div class="control-row">
+          <span class="control-label">Backface Culled:</span>
+          <span class="control-value" id="backfaceCulledCount">0</span>
+      </div>
+    </div>
+
+    <!-- Current Target Info -->
+    <div class="control-section">
+      <div class="section-title">🎯 Current Target</div>
+      <div class="control-row">
+        <span class="control-label">Body:</span>
+        <span class="control-value" id="currentTarget">None</span>
+      </div>
+      <div class="control-row">
+        <span class="control-label">Distance:</span>
+        <span class="control-value" id="targetDistance">-</span>
+      </div>
+      <div class="control-row">
+        <span class="control-label">Radius:</span>
+        <span class="control-value" id="targetRadius">-</span>
+      </div>
+      <div class="control-row">
+        <span class="control-label">Type:</span>
+        <span class="control-value" id="targetType">-</span>
+      </div>
+      <div class="control-row">
+        <span class="control-label">Orbital Period:</span>
+        <span class="control-value" id="targetOrbitalPeriod">-</span>
+      </div>
+      <div class="control-row">
+        <span class="control-label">Rotation Period:</span>
+        <span class="control-value" id="targetRotationPeriod">-</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Main Control Panel with Pull Tab -->
+<div id="controlPanel" class="scientific-panel">
+  <!-- Fixed Header -->
+  <div class="panel-header-fixed">
+    <div class="panel-title">SOLAR SYSTEM EXPLORER</div>
+  </div>
+  
+  <!-- Pull Tab (positioned outside but part of container) -->
+  <div class="panel-pull-tab main-pull-tab" id="panelToggle">
+    <div class="tab-icon">◀</div>
+  </div>
+  
+  <!-- Scrollable Content -->
+  <div class="panel-content">
+    <!-- Time Control Section -->
+    <div class="control-section time-section">
+      <div class="section-title">⏰ Time Control</div>
+      
+      <!-- Digital Clock Display -->
+      <div class="digital-clock">
+        <div class="clock-display">
+          <div class="date-line" id="currentDate">Jan 1, 2024</div>
+          <div class="time-line" id="currentTime">12:00:00 AM</div>
+        </div>
+        <div class="speed-indicator">
+          <div class="speed-value" id="speedIndicator">PAUSED</div>
+          <div class="speed-description" id="speedDescription">Time is frozen</div>
+        </div>
+      </div>
+      
+      <!-- Time Speed Control -->
+      <div class="control-row time-control-row">
+        <span class="control-label">Time Flow:</span>
+        <input type="range" class="scientific-slider time-speed-slider" id="orbitSpeedSlider" 
+              min="0" max="100" step="0.1" value="0">
+        <span class="control-value" id="timeSpeedValue">PAUSED</span>
+      </div>
+      
+      <!-- Time Actions -->
+      <div class="control-row">
+        <button class="scientific-button time-action-btn" id="resetTimeBtn">🔄 Reset to Today</button>
+        <button class="scientific-button time-action-btn" id="setDateBtn">📅 Set Date</button>
+      </div>
+    </div>
+
+    <!-- Planet Focus -->
+    <div class="control-section">
+      <div class="section-title">🌍 Celestial Bodies</div>
+      <div class="celestial-tree">
+        <div class="celestial-item planet" data-planet="sun">☀️ Sun</div>
+        
+        <div class="celestial-item planet" data-planet="mercury">☿️ Mercury</div>
+        
+        <div class="celestial-item planet" data-planet="venus">♀️ Venus</div>
+        
+        <div class="celestial-item planet" data-planet="earth">🌍 Earth</div>
+        <div class="celestial-item moon" data-planet="moon">🌙 Moon</div>
+        
+        <div class="celestial-item planet" data-planet="mars">♂️ Mars</div>
+        <div class="celestial-item moon" data-planet="phobos">🌑 Phobos</div>
+        <div class="celestial-item moon" data-planet="deimos">🌑 Deimos</div>
+        
+        <div class="celestial-item planet" data-planet="jupiter">♃ Jupiter</div>
+        <div class="celestial-item moon" data-planet="io">🌋 Io</div>
+        <div class="celestial-item moon" data-planet="europa">❄️ Europa</div>
+        <div class="celestial-item moon" data-planet="ganymede">🌑 Ganymede</div>
+        <div class="celestial-item moon" data-planet="callisto">🌑 Callisto</div>
+        
+        <div class="celestial-item planet" data-planet="saturn">♄ Saturn</div>
+        <div class="celestial-item moon" data-planet="titan">🌫️ Titan</div>
+        
+        <div class="celestial-item planet" data-planet="uranus">♅ Uranus</div>
+        
+        <div class="celestial-item planet" data-planet="neptune">♆ Neptune</div>
+        
+        <div class="celestial-item planet" data-planet="pluto">🌑 Pluto</div>
+        <div class="celestial-item moon" data-planet="charon">🌑 Charon</div>
+      </div>
+    </div>
+
+    <!-- Visual Settings -->
+    <div class="control-section">
+      <div class="section-title">🎨 Visual Settings</div>
+      <div class="control-row">
+        <button class="scientific-button" id="lodToggle">LOD Colors: OFF</button>
+      </div>
+      <div class="control-row">
+        <button class="scientific-button active" id="waveToggle">Wave Animation: ON</button>
+      </div>
+      <div class="control-row">
+        <button class="scientific-button active" id="axisOrbitToggle">Axis/Orbits: ON</button>
+      </div>
+      <div class="control-row">
+        <span class="control-label">Max LOD Level:</span>
+        <input type="range" class="scientific-slider" id="lodSlider" min="1" max="12" step="1" value="8">
+        <span class="control-value" id="lodValue">8</span>
+      </div>
+      <div class="control-row">
+        <span class="control-label">Target Pixel Size:</span>
+        <input type="range" class="scientific-slider" id="pixelSizeSlider" min="0" max="8" step="1" value="6">
+        <span class="control-value" id="pixelSizeValue">1px</span>
+      </div>
+      <div class="control-row">
+        <button class="scientific-button active" id="skyboxToggle">Skybox: ON</button>
+      </div>
+    </div>
+
+    <!-- Camera Controls -->
+    <div class="control-section">
+      <div class="section-title">🎮 Camera Control</div>
+      <div class="control-row">
+        <span class="control-label">Mode:</span>
+        <span class="control-value" id="cameraMode">Free Flight</span>
+      </div>
+      <div class="control-row">
+        <span class="control-label">Sensitivity:</span>
+        <input type="range" class="scientific-slider" id="sensitivitySlider" min="0.1" max="3" step="0.1" value="1">
+        <span class="control-value" id="sensitivityValue">1.0x</span>
+      </div>
+      <button class="scientific-button" id="resetCamera">🏠 Reset Camera</button>
+      <button class="scientific-button" id="freeCameraBtn">✈️ Free Flight</button>
+    </div>
+    
+  </div>
+</div>
+
+<!-- Enhanced Status HUD with Camera Controls -->
+<div id="statusHUD" class="scientific-panel status-hud-enhanced">
+  <div class="hud-content">
+    <div class="hud-title-small" id="hudTitle">FREE FLIGHT MODE</div>
+    
+    <!-- Camera Speed Control - Full Width Throttle -->
+    <div class="camera-controls">
+      <div class="throttle-container">
+        <div class="throttle-label">Camera Speed</div>
+        <input type="range" class="throttle-slider" id="speedSlider" min="0.001" max="5" step="0.001" value="1">
+        <div class="throttle-value" id="speedValue">1.0x</div>
+      </div>
+      
+      <!-- Free Flight Button (appears when focused on planet) -->
+      <button class="free-flight-btn" id="freeFlightBtn" style="display: none;">
+        <span class="btn-icon">✈️</span>
+        <span class="btn-text">Free Flight</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Date Picker Modal -->
+<div id="dateModal" class="modal">
+  <div class="modal-content scientific-panel">
+    <div class="modal-header">
+      <h3>📅 Set Simulation Date</h3>
+      <button class="modal-close" id="closeModal">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="date-input-group">
+        <label for="dateInput">Select Date & Time:</label>
+        <input type="datetime-local" id="dateInput" class="scientific-input">
+      </div>
+      <div class="modal-actions">
+        <button class="scientific-button" id="applyDate">Apply Date</button>
+        <button class="scientific-button" id="cancelDate">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
