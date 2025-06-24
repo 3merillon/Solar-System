@@ -6,7 +6,7 @@ export class RingSystem {
         this.setupBuffers();
         this.logDepthBufFC = 2.0 / (Math.log(20000.0 + 1.0) / Math.LN2);
         
-        // Ring configurations (same as before)
+        // Ring configurations
         this.ringConfigs = {
             jupiter: {
                 innerRadiusMultiplier: 1.15,
@@ -72,7 +72,7 @@ export class RingSystem {
     setupShaders() {
         const gl = this.gl;
         
-        // VERTEX SHADER - EXACT match to planet logarithmic depth calculation
+        // VERTEX SHADER - match the planet logarithmic depth calculation
         const vertexShaderSource = `#version 300 es
         precision mediump float;
         layout(location=0) in vec3 aPosition;
@@ -111,7 +111,7 @@ export class RingSystem {
         }
         `;
 
-        // FRAGMENT SHADER - EXACT match to planet logarithmic depth calculation
+        // FRAGMENT SHADER - match the planet logarithmic depth calculation
         const fragmentShaderSource = `#version 300 es
         #extension GL_EXT_frag_depth : enable
         precision mediump float;
@@ -335,61 +335,6 @@ export class RingSystem {
             indices: new Uint32Array(indices)
         };
     }
-    generateRingGeometryTorus(config, planetRadius) {
-        const innerRadius = planetRadius * config.innerRadiusMultiplier;
-        const outerRadius = planetRadius * config.outerRadiusMultiplier;
-        const segments = config.segments;
-        const rings = config.rings;
-        const torusTube = planetRadius * 0.005; // Small thickness
-
-        const vertices = [];
-        const texCoords = [];
-        const opacities = [];
-        const ringIndices = [];
-        const indices = [];
-        let vertexIndex = 0;
-
-        for (let ring = 0; ring < rings; ring++) {
-            const ringStart = innerRadius + (outerRadius - innerRadius) * (ring / rings);
-            const ringEnd = innerRadius + (outerRadius - innerRadius) * ((ring + 1) / rings);
-
-            for (let i = 0; i <= segments; i++) {
-                const angle = (i / segments) * Math.PI * 2;
-                const cos = Math.cos(angle);
-                const sin = Math.sin(angle);
-
-                // Two points: one just above the ring plane, one just below
-                for (let j = 0; j <= 1; j++) {
-                    const y = (j === 0 ? -1 : 1) * torusTube;
-                    vertices.push(ringStart * cos, y, ringStart * sin);
-                    texCoords.push(i / segments, ring / rings);
-                    opacities.push(config.opacity);
-                    ringIndices.push(ring);
-
-                    vertices.push(ringEnd * cos, y, ringEnd * sin);
-                    texCoords.push(i / segments, (ring + 1) / rings);
-                    opacities.push(config.opacity);
-                    ringIndices.push(ring);
-                }
-
-                if (i < segments) {
-                    const base = vertexIndex;
-                    // Lower quad
-                    indices.push(base, base + 2, base + 1);
-                    indices.push(base + 2, base + 3, base + 1);
-                }
-                vertexIndex += 4;
-            }
-        }
-
-        return {
-            vertices: new Float32Array(vertices),
-            texCoords: new Float32Array(texCoords),
-            opacities: new Float32Array(opacities),
-            ringIndices: new Float32Array(ringIndices),
-            indices: new Uint32Array(indices)
-        };
-    }
 
     collectRingData(body, viewMatrix, projMatrix, time, sunPosition) {
         if (!this.camera) return null;
@@ -448,12 +393,12 @@ export class RingSystem {
         gl.useProgram(this.program);
         gl.bindVertexArray(this.vao);
 
-        // Set uniforms with EXACT same logDepthBufFC as planets
+        // Set uniforms
         gl.uniformMatrix4fv(this.uniforms.uModel, false, new Float32Array(cameraRelativeWorldMatrix));
         gl.uniformMatrix4fv(this.uniforms.uView, false, new Float32Array(viewMatrix));
         gl.uniformMatrix4fv(this.uniforms.uProj, false, new Float32Array(projMatrix));
         gl.uniform1f(this.uniforms.uTime, time);
-        gl.uniform1f(this.uniforms.uLogDepthBufFC, this.logDepthBufFC); // CRITICAL: Same value as planets
+        gl.uniform1f(this.uniforms.uLogDepthBufFC, this.logDepthBufFC);
         gl.uniform3fv(this.uniforms.uCameraPos, new Float32Array([0, 0, 0]));
         gl.uniform3fv(this.uniforms.uRingColor, new Float32Array(config.color));
         gl.uniform3fv(this.uniforms.uSunPosition, new Float32Array(cameraRelativeSunPos));

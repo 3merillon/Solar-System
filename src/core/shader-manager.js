@@ -1,4 +1,3 @@
-// shader-manager.js
 export class ShaderManager {
     constructor(gl) {
         this.gl = gl;
@@ -28,10 +27,10 @@ export class ShaderManager {
             };
             
             this.customShaders.set(planetId, shaderData);
-            console.log(`Custom shader registered for ${planetId}`);
+            //console.log(`Custom shader registered for ${planetId}`);
             return true;
         } catch (error) {
-            console.error(`Failed to register custom shader for ${planetId}:`, error);
+            //console.error(`Failed to register custom shader for ${planetId}:`, error);
             return false;
         }
     }
@@ -73,7 +72,6 @@ export class ShaderManager {
             uLodDistances: gl.getUniformLocation(program, 'uLodDistances'),
             uMaxLod: gl.getUniformLocation(program, 'uMaxLod'),
             uLogDepthBufFC: gl.getUniformLocation(program, 'uLogDepthBufFC'),
-            // Enhanced custom uniforms
             uIntensity: gl.getUniformLocation(program, 'uIntensity'),
             uFlareScale: gl.getUniformLocation(program, 'uFlareScale'),
             uCoronaIntensity: gl.getUniformLocation(program, 'uCoronaIntensity'),

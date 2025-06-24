@@ -18,7 +18,7 @@ import { titanVertexShaderSource, titanFragmentShaderSource, createTitanUniformS
 import { charonVertexShaderSource, charonFragmentShaderSource, createCharonUniformSetup } from '../charon-shaders.js';
 
 export function setupPlanetShaders(shaderManager) {
-    console.log('Setting up custom planet shaders...');
+    //console.log('Setting up custom planet shaders...');
     
     // Register Earth shader
     const earthSuccess = shaderManager.registerCustomShader(
@@ -153,7 +153,7 @@ export function setupPlanetShaders(shaderManager) {
         createCharonUniformSetup()
     );
     
-    console.log('Planet shader registration results:', {
+    /*console.log('Planet shader registration results:', {
         earth: earthSuccess,
         mars: marsSuccess,
         phobos: phobosSuccess,
@@ -170,7 +170,7 @@ export function setupPlanetShaders(shaderManager) {
         neptune: neptuneSuccess,
         pluto: plutoSuccess,
         charon: charonSuccess
-    });
+    });*/
     return earthSuccess && marsSuccess && phobosSuccess && deimosSuccess && venusSuccess && moonSuccess &&
         mercurySuccess && jupiterSuccess && ioSuccess && europaSuccess && saturnSuccess && titanSuccess &&
         uranusSuccess && neptuneSuccess && plutoSuccess && charonSuccess;

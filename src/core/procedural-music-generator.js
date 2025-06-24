@@ -7,7 +7,7 @@ export class ProceduralMusicGenerator {
         this.sequencePosition = 0;
         this.nextNoteTime = 0;
         this.lookahead = 25.0;
-        this.scheduleAheadTime = 0.2; // Increased for smoother scheduling
+        this.scheduleAheadTime = 0.2;
         this.timerID = 0;
         this.currentKey = 0;
         this.currentScale = [];
@@ -149,7 +149,7 @@ export class ProceduralMusicGenerator {
     initializeInstruments() {
         this.currentInstruments.clear();
         
-        // Core instruments - always present with consistent levels
+        // Core instruments
         this.currentInstruments.set('lead', {
             type: 'sawtooth',
             octave: 5,
@@ -195,7 +195,7 @@ export class ProceduralMusicGenerator {
             category: 'core'
         });
 
-        // PROMINENT ARPEGGIATOR - Much more noticeable
+        // Arpeggiator
         this.currentInstruments.set('arp', {
             type: 'square',
             octave: 6,
@@ -209,7 +209,7 @@ export class ProceduralMusicGenerator {
             filterFreq: 1500,
             resonance: 6,
             swing: 0.1,
-            gain: 0.35 * this.mixLevels.arpeggio, // Much louder!
+            gain: 0.35 * this.mixLevels.arpeggio,
             category: 'arpeggio',
             layers: 2
         });
@@ -470,7 +470,7 @@ export class ProceduralMusicGenerator {
         return { chord, resolution: chord };
     }
 
-    // ENHANCED ARPEGGIO SYSTEM - Much more prominent!
+    // ARPEGGIO SYSTEM
     createProminentArpeggio(notes, evolution = 0, layer = 0) {
         const patterns = [
             [0, 1, 2, 1],                    // Classic
@@ -673,7 +673,7 @@ export class ProceduralMusicGenerator {
             synth.osc.start(safeStartTime);
             synth.osc.stop(endTime);
         } catch (error) {
-            console.warn('Synth trigger error:', error);
+            //console.warn('Synth trigger error:', error);
             return;
         }
     }
@@ -708,7 +708,7 @@ export class ProceduralMusicGenerator {
             }
         });
 
-        // Cleanup with shorter timeout to prevent accumulation
+        // Cleanup with timeout to prevent accumulation
         setTimeout(() => {
             this.cleanupOscillators();
         }, (safeDuration + 1) * 1000);
@@ -732,7 +732,7 @@ export class ProceduralMusicGenerator {
         });
     }
 
-    // MAIN SCHEDULING - Fixed for continuous play
+    // MAIN SCHEDULING
     scheduleNote() {
         // Update global evolution continuously
         this.updateGlobalEvolution();
@@ -771,7 +771,7 @@ export class ProceduralMusicGenerator {
             this.playInstrument('pad', chord, this.nextNoteTime, beatLength * 4);
             this.playInstrument('bass', [chord[0]], this.nextNoteTime, beatLength * 0.8);
             
-            // PROMINENT ARPEGGIOS - Always present!
+            // ARPEGGIOS
             this.playProminentArpeggio(chord, this.nextNoteTime, beatLength, this.arpeggioEvolution, 'arp');
             if (this.rng() > 0.3) {
                 this.playProminentArpeggio(chord, this.nextNoteTime + beatLength * 0.125, beatLength, this.arpeggioEvolution, 'arp2');
@@ -799,7 +799,7 @@ export class ProceduralMusicGenerator {
             }
             
         } else if (currentBeat === 2) {
-            // Continue arpeggios - most important!
+            // Continue arpeggios
             this.playProminentArpeggio(chord, this.nextNoteTime, beatLength, this.arpeggioEvolution, 'arp');
             this.playProminentArpeggio(chord, this.nextNoteTime + beatLength * 0.0625, beatLength, this.arpeggioEvolution, 'arp2');
             
@@ -851,7 +851,7 @@ export class ProceduralMusicGenerator {
         this.lastScheduledTime = this.nextNoteTime;
     }
 
-    // IMPROVED SCHEDULER - No more pauses!
+    // SCHEDULER
     scheduler() {
         if (!this.isPlaying) return;
         
@@ -869,8 +869,7 @@ export class ProceduralMusicGenerator {
             }
             
         } catch (error) {
-            console.warn('Scheduler error:', error);
-            // Don't stop on errors, just continue
+            //console.warn('Scheduler error:', error);
         }
         
         // Use shorter timeout for more responsive scheduling
@@ -892,7 +891,7 @@ export class ProceduralMusicGenerator {
                 this.scheduler();
             }
         } catch (error) {
-            console.warn('Start error:', error);
+            //console.warn('Start error:', error);
         }
     }
 

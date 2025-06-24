@@ -13,7 +13,7 @@ export class AudioManager {
         const config = {
             seed: seed,
             volume: 0.4,
-            tempo: 95 + Math.floor((seed % 1000) / 20), // 95-145 BPM range for upbeat feel
+            tempo: 95 + Math.floor((seed % 1000) / 20),
             key: 'C',
             scale: this.getScaleFromSeed(seed)
         };
@@ -28,7 +28,6 @@ export class AudioManager {
     }
 
     getScaleFromSeed(seed) {
-        // More upbeat, celestial scales
         const scales = ['major', 'lydian', 'mixolydian', 'dorian', 'pentatonic', 'wholeTone'];
         return scales[seed % scales.length];
     }
@@ -41,7 +40,7 @@ export class AudioManager {
         try {
             await this.musicGenerator.start();
         } catch (error) {
-            console.warn('Failed to start music:', error);
+            //console.warn('Failed to start music:', error);
         }
     }
 

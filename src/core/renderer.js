@@ -8,7 +8,7 @@ import { logDepthVertexShaderSource, logDepthFragmentShaderSource, logDepthLineV
 export class LineRenderer {
     constructor(gl) {
         this.gl = gl;
-        this.camera = null; // Add camera reference
+        this.camera = null;
         this.setupShaders();
         this.setupBuffers();
         
@@ -16,7 +16,6 @@ export class LineRenderer {
         this.logDepthBufFC = 2.0 / (Math.log(20000.0 + 1.0) / Math.LN2);
     }
 
-    // Add method to set camera reference
     setCamera(camera) {
         this.camera = camera;
     }
@@ -81,7 +80,7 @@ export class LineRenderer {
 
     renderAxis(body, viewMatrix, projMatrix) {
         if (!this.camera) {
-            console.error('Camera not set on LineRenderer. Call setCamera() first.');
+            //console.error('Camera not set on LineRenderer. Call setCamera() first.');
             return;
         }
 
@@ -121,7 +120,7 @@ export class LineRenderer {
 
     renderOrbit(body, viewMatrix, projMatrix, currentTime) {
         if (!this.camera) {
-            console.error('Camera not set on LineRenderer. Call setCamera() first.');
+            //console.error('Camera not set on LineRenderer. Call setCamera() first.');
             return;
         }
 
@@ -195,7 +194,7 @@ export class LineRenderer {
     }
 }
 
-// Enhanced patch culling utilities
+// Patch culling utilities
 class PatchCuller {
     constructor() {
         this.frustumPlanes = new Array(6);
@@ -482,7 +481,7 @@ class ScreenSpaceLOD {
     }
 }
 
-// SMART FIX: Planet rotation state tracker
+// Planet rotation state tracker
 class PlanetRotationTracker {
     constructor() {
         this.planetStates = new Map();
@@ -510,7 +509,7 @@ class PlanetRotationTracker {
         );
         const distanceToSurface = Math.max(0.1, distanceToCenter - body.radius);
         
-        // SMART FIX: Adaptive threshold based on distance and LOD
+        // Adaptive threshold based on distance and LOD
         let adaptiveThreshold = threshold;
         
         // More aggressive for close distances
@@ -825,13 +824,13 @@ export class ScreenSpaceGPULODRenderer {
     setTerrainInitialized(initialized) {
         this.terrainInitialized = initialized;
         if (initialized) {
-            console.log('Renderer: Terrain initialization complete');
+            //console.log('Renderer: Terrain initialization complete');
         }
     }
 
     setPrecomputedTerrain(terrainMap) {
         this.precomputedTerrain = terrainMap;
-        console.log('Renderer: Received precomputed terrain for', terrainMap.size, 'bodies');
+        //console.log('Renderer: Received precomputed terrain for', terrainMap.size, 'bodies');
         
         // Pre-load geometry into GPU buffers
         this.preloadTerrainToGPU();
@@ -847,10 +846,10 @@ export class ScreenSpaceGPULODRenderer {
             const buffers = this.createBodyBuffers(terrainData.geometry);
             this.terrainBuffers.set(bodyId, buffers);
             
-            console.log(`Pre-loaded ${bodyId} terrain to GPU:`, {
+            /*console.log(`Pre-loaded ${bodyId} terrain to GPU:`, {
                 vertices: terrainData.stats.vertexCount,
                 indices: terrainData.stats.indexCount
-            });
+            });*/
         }
     }
 
@@ -927,7 +926,6 @@ export class ScreenSpaceGPULODRenderer {
         };
     }
 
-    // Add method to set camera reference
     setCamera(camera) {
         this.camera = camera;
         this.ringSystem.setCamera(camera);
@@ -936,7 +934,6 @@ export class ScreenSpaceGPULODRenderer {
     }
 
     setupCustomShaders() {
-        // Existing sun shader setup
         this.shaderManager.registerCustomShader(
             'sun',
             sunVertexShaderSource,
@@ -944,10 +941,10 @@ export class ScreenSpaceGPULODRenderer {
             createSunUniformSetup()
         );
         
-        // NEW: Setup planet shaders
+        // Setup planet shaders
         setupPlanetShaders(this.shaderManager);
         
-        console.log('All custom shaders registered successfully');
+        //console.log('All custom shaders registered successfully');
     }
     
     setupShaders() {
@@ -1053,10 +1050,9 @@ export class ScreenSpaceGPULODRenderer {
     
     // Generate cache key for geometry caching - now includes camera direction
     generateCacheKey(bodyId, cameraPos, cameraForward, maxLod, targetIndex) {
-        // Much finer quantization to be more sensitive to movement
         const quantize = (val, step) => Math.round(val / step) * step;
-        const posStep = this.cacheThreshold * 0.5; // Even finer position steps
-        const rotStep = this.rotationThreshold * 0.5; // Even finer rotation steps
+        const posStep = this.cacheThreshold * 0.5;
+        const rotStep = this.rotationThreshold * 0.5;
         
         const qPos = [
             quantize(cameraPos[0], posStep),
@@ -1332,7 +1328,7 @@ export class ScreenSpaceGPULODRenderer {
         
         // Check if camera is available
         if (!this.camera) {
-            console.error('Camera not set on renderer. Call setCamera() first.');
+            //console.error('Camera not set on renderer. Call setCamera() first.');
             return { patches: 0, vertices: 0, cullStats: this.cullStats, ringData: null };
         }
         
@@ -1479,7 +1475,7 @@ export class ScreenSpaceGPULODRenderer {
         // Calculate patches count from geometry if not already available
         const patchCount = patches ? patches.length : Math.floor(geometry.I.length / 12);
         
-        // COLLECT RING DATA for deferred rendering (instead of rendering rings immediately)
+        // COLLECT RING DATA for deferred rendering
         const ringData = this.ringSystem.collectRingData(body, viewMatrix, projMatrix, time, sunPosition);
         
         return { 
@@ -1495,7 +1491,7 @@ export class ScreenSpaceGPULODRenderer {
         const gl = this.gl;
         
         if (!this.camera) {
-            console.error('Camera not set on renderer. Call setCamera() first.');
+            //console.error('Camera not set on renderer. Call setCamera() first.');
             return { patches: 0, vertices: 0, cullStats: this.cullStats, ringData: null };
         }
         
@@ -1504,7 +1500,7 @@ export class ScreenSpaceGPULODRenderer {
             return this.renderPrecomputedBody(body, cameraPos, cameraForward, viewMatrix, projMatrix, time, showLod, animateWaves, sunPosition);
         }
         
-        // Fall back to dynamic generation (your existing code)
+        // Fall back to dynamic generation
         return this.renderDynamicBody(body, cameraPos, cameraForward, viewMatrix, projMatrix, time, showLod, animateWaves, sunPosition, maxLod);
     }
 
@@ -1516,7 +1512,7 @@ export class ScreenSpaceGPULODRenderer {
         const buffers = this.terrainBuffers.get(body.id);
         
         if (!terrainData || !buffers) {
-            console.warn(`No precomputed terrain for ${body.id}`);
+            //console.warn(`No precomputed terrain for ${body.id}`);
             return { patches: 0, vertices: 0, cullStats: this.cullStats, ringData: null };
         }
         
@@ -1623,7 +1619,6 @@ export class ScreenSpaceGPULODRenderer {
     }
     
     perspective(fovy, aspect, near, far) {
-        // Update near/far for logarithmic depth with 10x scale
         this.near = near;
         this.far = far;
         this.logDepthBufFC = 2.0 / (Math.log(far + 1.0) / Math.LN2);

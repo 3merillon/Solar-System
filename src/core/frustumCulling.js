@@ -73,7 +73,7 @@ export class FrustumCuller {
         return true;
     }
 
-    // CAMERA-CENTERED: Updated to work with camera-relative coordinates
+    // CAMERA-CENTERED: Camera-relative coordinates
     getPlanetWorldCenter(body, camera) {
         // Return camera-relative position
         return camera.worldToCameraRelative(body.position);

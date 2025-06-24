@@ -2,7 +2,7 @@ import { nrm, cr, dt, sub, add, lookAt } from './utils.js';
 
 export class EnhancedCamera {
     constructor() {
-        // IMPROVED: Start near Earth with Sun in backdrop
+        // Start near Earth with Sun in backdrop
         this.worldPosition = [0, 0, 0];
         this.forward = [0, 0, -1];
         this.up = [0, 1, 0];
@@ -73,16 +73,13 @@ export class EnhancedCamera {
             sunToEarth[2] / sunEarthDistance
         ];
         
-        // Position camera further from Earth (about 6x Earth's radius for better perspective)
+        // Position camera
         const cameraDistance = earth.radius * 10.0;
         
-        // Position camera between Earth and Sun, but offset for dramatic view
-        // Use a smaller offset angle so we're more aligned with Sun-Earth line
         const offsetAngle = Math.PI * -0.07;
         const cosOffset = Math.cos(offsetAngle);
         const sinOffset = Math.sin(offsetAngle);
         
-        // Create perpendicular vector for offset (in XZ plane primarily)
         const perpendicular = [
             -sunToEarthNorm[2], // Perpendicular in XZ plane
             0,
@@ -94,8 +91,7 @@ export class EnhancedCamera {
             perpendicular[2] /= perpLength;
         }
         
-        // Calculate camera offset from Earth - position BEHIND Earth relative to Sun
-        // This puts Earth between camera and Sun for proper backlighting
+        // Offset camera
         const cameraOffset = [
             (sunToEarthNorm[0] * cosOffset + perpendicular[0] * sinOffset) * cameraDistance,
             sunToEarthNorm[1] * cameraDistance + earth.radius * 0.3, // Reduced vertical offset
@@ -109,7 +105,6 @@ export class EnhancedCamera {
             earthPos[2] + cameraOffset[2]
         ];
         
-        // STAY IN FREE MODE - just set orientation to look towards Sun past Earth
         this.mode = 'free';
         this.target = null; // No target in free mode
         
@@ -120,7 +115,6 @@ export class EnhancedCamera {
             sunPos[2] - this.worldPosition[2]
         ];
         
-        // Set camera orientation to look towards Sun (Earth will be in foreground)
         this.forward = nrm(cameraToSun);
         
         // Set up vector pointing generally upward
@@ -148,13 +142,13 @@ export class EnhancedCamera {
             cameraToSun[2] * cameraToSun[2]
         );
         
-        console.log('Camera initialized in FREE MODE with Earth in foreground and Sun in view');
-        console.log(`Earth position: [${earthPos[0].toFixed(1)}, ${earthPos[1].toFixed(1)}, ${earthPos[2].toFixed(1)}]`);
-        console.log(`Sun position: [${sunPos[0].toFixed(1)}, ${sunPos[1].toFixed(1)}, ${sunPos[2].toFixed(1)}]`);
-        console.log(`Camera position: [${this.worldPosition[0].toFixed(1)}, ${this.worldPosition[1].toFixed(1)}, ${this.worldPosition[2].toFixed(1)}]`);
-        console.log(`Distance to Earth: ${distanceToEarth.toFixed(1)} units (${(distanceToEarth/earth.radius).toFixed(1)}x Earth radius)`);
-        console.log(`Distance to Sun: ${distanceToSun.toFixed(1)} units`);
-        console.log(`Camera looking towards Sun with Earth in foreground`);
+        //console.log('Camera initialized in FREE MODE with Earth in foreground and Sun in view');
+        //console.log(`Earth position: [${earthPos[0].toFixed(1)}, ${earthPos[1].toFixed(1)}, ${earthPos[2].toFixed(1)}]`);
+        //console.log(`Sun position: [${sunPos[0].toFixed(1)}, ${sunPos[1].toFixed(1)}, ${sunPos[2].toFixed(1)}]`);
+        //console.log(`Camera position: [${this.worldPosition[0].toFixed(1)}, ${this.worldPosition[1].toFixed(1)}, ${this.worldPosition[2].toFixed(1)}]`);
+        //console.log(`Distance to Earth: ${distanceToEarth.toFixed(1)} units (${(distanceToEarth/earth.radius).toFixed(1)}x Earth radius)`);
+        //console.log(`Distance to Sun: ${distanceToSun.toFixed(1)} units`);
+        //console.log(`Camera looking towards Sun with Earth in foreground`);
     }
     
     // Get camera position for external use (world coordinates)
@@ -551,7 +545,7 @@ export class EnhancedCamera {
     
     focusBody(bodyId) {
         if (!this.solarSystem) {
-            console.warn('Solar system not set on camera');
+            //console.warn('Solar system not set on camera');
             return;
         }
         

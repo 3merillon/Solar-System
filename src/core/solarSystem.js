@@ -4,11 +4,11 @@ export class CelestialBody {
     constructor(config) {
         this.id = config.id;
         this.name = config.name;
-        this.radius = config.radius * 10; // 10x scale
+        this.radius = config.radius * 10;
         this.color = config.color;
         this.parent = null;
         this.children = [];
-        this.orbitRadius = (config.orbitRadius || 0) * 10; // 10x scale
+        this.orbitRadius = (config.orbitRadius || 0) * 10;
         this.orbitSpeed = config.orbitSpeed || 0;
         this.orbitTilt = config.orbitTilt || 0;
         this.orbitPhase = config.orbitPhase || 0;
@@ -120,7 +120,6 @@ export class CelestialBody {
 
 const DEG = Math.PI / 180;
 
-// Updated configuration with 10x scaled radii and orbit distances
 export const SOLAR_SYSTEM_CONFIG = {
     sun: { 
         id: 'sun', name: 'Sun', radius: 2.0, color: [1, 0.8, 0.2], 

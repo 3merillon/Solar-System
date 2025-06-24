@@ -25,7 +25,7 @@ export class RetroSolarSystemApp {
         this.audioManager = new AudioManager();
         this.audioInitialized = false;
 
-        // Terrain is always initialized (no async)
+        // Initialize terrain
         this.terrainInitialized = true;
 
         this.showLod = false;
@@ -37,7 +37,7 @@ export class RetroSolarSystemApp {
         this.lastTime = 0;
         this.waveTime = 0;
 
-        // Default to 1 day per second (86400 seconds per second)
+        // Default to real time ( 1sec = 1sec)
         this.timeMultiplier = 1;
 
         this.performanceStats = {
@@ -90,7 +90,7 @@ export class RetroSolarSystemApp {
                 // Update UI to reflect audio state
                 this.updateAudioUI();
             } catch (error) {
-                console.warn('Audio initialization failed:', error);
+                //console.warn('Audio initialization failed:', error);
             }
         }
     }
@@ -121,7 +121,6 @@ export class RetroSolarSystemApp {
         // Start side panels as collapsed (docked), but music panel open
         controlPanel.classList.add('collapsed');
         infoPanel.classList.add('collapsed');
-        // musicPanel starts open - no collapsed class added
         
         // Set initial tab icons
         document.querySelector('.main-pull-tab .tab-icon').textContent = '▶';
@@ -729,7 +728,6 @@ export class RetroSolarSystemApp {
         this.lastTime = currentTime;
         this.waveTime = currentTime * 0.001;
 
-        // Solar system now handles its own time updates
         this.solarSystem.update(deltaTime);
         this.camera.update(deltaTime);
 
