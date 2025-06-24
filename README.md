@@ -67,7 +67,7 @@ npm run preview
 ---
 
 ## 📁 Project Structure
-
+```
 retro-solar-explorer/
 ├── src/
 │   ├── app.js               # Main application class
@@ -87,7 +87,7 @@ retro-solar-explorer/
 ├── index.html
 ├── package.json
 └── vite.config.js
-
+```
 ---
 
 ## 🎯 Use Cases
