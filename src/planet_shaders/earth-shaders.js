@@ -13,7 +13,7 @@ uniform mediump int uShowLod;
 uniform float uTime;
 uniform vec3 uPlanetColor;
 uniform float uPlanetRadius;
-uniform mediump int uHasWaves;
+uniform int uHasWaves;
 uniform float uNoiseScale;
 uniform float uNoiseOffset;
 uniform vec3 uCameraPos;
@@ -48,23 +48,23 @@ vec3 getLodColor(float l) {
 }
 
 float hash(vec3 p) {
-    p = fract(p * 0.3183099 + 0.1);
-    p *= 17.0;
+    // Reduce risk of overflow by keeping p small
+    p = fract(p * 0.31831 + 0.1);
+    p *= 7.0; // was 17.0
     return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
 }
 
 float noise3d(vec3 p) {
+    // p should be in a reasonable range, e.g. [-50, 50]
     vec3 i = floor(p);
     vec3 f = fract(p);
     f = f * f * (3.0 - 2.0 * f);
-    
     return mix(mix(mix(hash(i + vec3(0,0,0)), hash(i + vec3(1,0,0)), f.x),
                    mix(hash(i + vec3(0,1,0)), hash(i + vec3(1,1,0)), f.x), f.y),
                mix(mix(hash(i + vec3(0,0,1)), hash(i + vec3(1,0,1)), f.x),
                    mix(hash(i + vec3(0,1,1)), hash(i + vec3(1,1,1)), f.x), f.y), f.z);
 }
 
-// Simple 2-octave FBM
 float fbm2(vec3 p) {
     return noise3d(p) * 0.6 + noise3d(p * 2.0) * 0.3;
 }
@@ -76,83 +76,80 @@ float ridgedNoise(vec3 p) {
 
 // Enhanced Earth terrain with improved mountains and coastal transitions
 float earthTerrain(vec3 n, float t, float scale, float offset, out float waterMask, out float coastalDistance) {
+    // Keep p in a small range!
     vec3 p = n * scale + vec3(offset);
-    
-    // Continental structure - simplified but effective
-    float continents = fbm2(p * 0.4 + vec3(100.0)) * 0.5;
-    continents += noise3d(p * 0.8 + vec3(200.0)) * 0.25;
-    continents -= 0.28; // Adjust for ~30% land
-    
-    // Smooth coastal distance calculation for beach transitions
+
+    float continents = fbm2(p * 0.4 + vec3(10.0)) * 0.5;
+    continents += noise3d(p * 0.8 + vec3(20.0)) * 0.25;
+    continents -= 0.28;
+
     coastalDistance = smoothstep(-0.08, 0.08, continents);
-    
-    // Water mask for rendering separation
     waterMask = smoothstep(0.02, -0.02, continents);
-    
-    // WATER: Only small surface perturbations
+
     if (continents < 0.02) {
+        // Original small-scale water animation (works on mobile)
         float waterSurface = noise3d(p * 8.0 + vec3(t * 0.5)) * 0.002;
-        
-        // Simple ocean waves
-        if (t > 0.0) {
-            waterSurface += sin(p.x * 15.0 + t * 1.2) * sin(p.z * 12.0 + t * 0.8) * 0.001;
-        }
-        
+
+        // Small, high-frequency animated ripples
+        waterSurface += 
+            sin(p.x * 15.0 + t * 1.2) *
+            sin(p.z * 12.0 + t * 0.8) * 0.001;
+
         return clamp(waterSurface, -0.003, 0.003);
     }
-    
-    // LAND: Full terrain displacement
+
     float terrain = continents;
-    
-    // Enhanced mountains with multiple scales and ridges
+
     if (continents > -0.05) {
-        // Primary mountain ranges with ridged noise
-        float mountainBase = ridgedNoise(p * 1.8 + vec3(50.0));
+        float mountainBase = 1.0 - abs(noise3d(p * 0.9 + vec3(5.0)) * 2.0 - 1.0);
         float mountains1 = max(0.0, mountainBase - 0.35);
         mountains1 = mountains1 * mountains1 * 0.18;
-        
-        // Secondary mountain details
-        float mountains2 = max(0.0, noise3d(p * 3.2 + vec3(150.0)) - 0.45);
+
+        float mountains2 = max(0.0, noise3d(p * 1.6 + vec3(8.0)) - 0.45);
         mountains2 = mountains2 * mountains2 * 0.1;
-        
-        // Mountain ridges and peaks
-        float ridges = ridgedNoise(p * 2.8 + vec3(250.0));
+
+        float ridges = 1.0 - abs(noise3d(p * 1.4 + vec3(12.0)) * 2.0 - 1.0);
         float peaks = max(0.0, ridges - 0.6) * 0.12;
-        
-        // Combine mountain features
+
         float totalMountains = mountains1 + mountains2 + peaks;
-        
-        // Mountain mask - stronger on land, weaker near coasts
+
         float mountainMask = smoothstep(-0.05, 0.15, continents);
         totalMountains *= mountainMask;
-        
-        // Add some mountain variation based on noise
-        float mountainVariation = noise3d(p * 1.5 + vec3(350.0)) * 0.3 + 0.7;
+
+        float mountainVariation = noise3d(p * 0.75 + vec3(17.0)) * 0.3 + 0.7;
         totalMountains *= mountainVariation;
-        
+
         terrain += totalMountains;
     }
-    
-    // Polar ice caps
+
     float latitude = abs(n.y);
-    if (latitude > 0.75) {
-        float iceStrength = smoothstep(0.75, 0.95, latitude);
-        float iceNoise = noise3d(p * 2.5 + vec3(800.0)) * 0.5 + 0.5;
-        terrain += iceStrength * iceNoise * 0.02;
+    if (latitude > 0.7) {
+        float iceStrength = smoothstep(0.7, 0.92, latitude);
+        float iceNoise = noise3d(p * 1.2 + vec3(30.0)) * 0.5;
+        iceNoise += noise3d(p * 2.5 + vec3(40.0)) * 0.25;
+        iceNoise += noise3d(p * 5.0 + vec3(50.0)) * 0.125;
+        iceNoise = iceNoise * 0.5 + 0.5;
+        float radialVar = sin(atan(n.z, n.x) * 7.0) * 0.1 + 1.0;
+        iceNoise *= radialVar;
+        terrain += iceStrength * iceNoise * 0.015;
     }
-    
-    // Fine detail
-    terrain += noise3d(p * 12.0) * 0.005;
-    
+
+    terrain += noise3d(p * 3.0) * 0.005;
     return clamp(terrain, -0.08, 0.3);
 }
 
+// Better normal calculation with mobile-friendly approach
 vec3 calculateDisplacedNormal(vec3 n, float t, float epsilon) {
-    vec3 tangent1 = normalize(cross(n, vec3(0.0, 1.0, 0.0)));
-    if(length(tangent1) < 0.1) {
+    // Use more robust tangent calculation
+    vec3 tangent1, tangent2;
+    
+    // Choose best tangent based on normal direction to avoid singularities
+    if (abs(n.y) < 0.9) {
+        tangent1 = normalize(cross(n, vec3(0.0, 1.0, 0.0)));
+    } else {
         tangent1 = normalize(cross(n, vec3(1.0, 0.0, 0.0)));
     }
-    vec3 tangent2 = normalize(cross(n, tangent1));
+    tangent2 = normalize(cross(n, tangent1));
     
     vec3 n1 = normalize(n + epsilon * tangent1);
     vec3 n2 = normalize(n + epsilon * tangent2);
@@ -169,7 +166,14 @@ vec3 calculateDisplacedNormal(vec3 n, float t, float epsilon) {
     vec3 v1 = p1 - p0;
     vec3 v2 = p2 - p0;
     
-    return normalize(cross(v1, v2));
+    vec3 normal = normalize(cross(v1, v2));
+    
+    // Ensure normal points outward
+    if (dot(normal, n) < 0.0) {
+        normal = -normal;
+    }
+    
+    return normal;
 }
 
 float morphTargetRadius(vec3 dir, vec3 e0, vec3 e1, float t) {
@@ -253,9 +257,13 @@ void main() {
     vWaterMask = waterMask;
     vCoastalDistance = coastalDistance;
     
+    // Better texture coordinate calculation to reduce polar distortion
+    float phi = atan(n.z, n.x);
+    float theta = asin(clamp(n.y, -0.999, 0.999)); // Clamp to avoid precision issues
+    
     vTexCoord = vec2(
-        atan(n.z, n.x) / (2.0 * 3.14159) + 0.5,
-        asin(clamp(n.y, -1.0, 1.0)) / 3.14159 + 0.5
+        phi / (2.0 * 3.14159) + 0.5,
+        theta / 3.14159 + 0.5
     );
     
     if(uShowLod == 1) {
@@ -274,7 +282,6 @@ void main() {
 `;
 
 export const earthFragmentShaderSource = `#version 300 es
-#extension GL_EXT_frag_depth : enable
 precision mediump float;
 
 in vec3 vColour;
@@ -297,6 +304,7 @@ uniform float uLogDepthBufFC;
 uniform vec3 uSunPosition;
 uniform float uNoiseScale;
 uniform float uNoiseOffset;
+uniform mediump int uShowLod;
 
 float hash(vec3 p) {
     p = fract(p * 0.3183099 + 0.1);
@@ -315,9 +323,10 @@ float noise3d(vec3 p) {
                    mix(hash(i + vec3(0,1,1)), hash(i + vec3(1,1,1)), f.x), f.y), f.z);
 }
 
-// Simple smooth transition
+// MOBILE-FRIENDLY: Simple smooth transition using mix instead of smoothstep
 float smoothTransition(float value, float threshold, float smoothness) {
-    return smoothstep(threshold - smoothness, threshold + smoothness, value);
+    float t = clamp((value - threshold + smoothness) / (2.0 * smoothness), 0.0, 1.0);
+    return t * t * (3.0 - 2.0 * t); // Manual smoothstep
 }
 
 vec3 getEarthSurfaceColor(vec3 localPos, float elevation, float waterMask, float coastalDistance) {
@@ -381,11 +390,24 @@ vec3 getEarthSurfaceColor(vec3 localPos, float elevation, float waterMask, float
     float moistureZone = noise3d(p * 1.2 + vec3(600.0)) * 0.5 + 0.5;
     moistureZone = clamp(moistureZone, 0.0, 1.0);
     
-    // Ice caps
+    // Better ice caps with reduced hexagonal artifacts
     float iceCapFactor = 0.0;
-    if (absoluteLatitude > 0.75) {
-        iceCapFactor = smoothTransition(absoluteLatitude, 0.8, 0.1);
-        iceCapFactor *= noise3d(p * 2.5) * 0.5 + 0.5;
+    if (absoluteLatitude > 0.7) {
+        iceCapFactor = smoothTransition(absoluteLatitude, 0.75, 0.15);
+        
+        // Multiple noise layers to break up patterns
+        float iceNoise = noise3d(p * 2.5) * 0.4;
+        iceNoise += noise3d(p * 5.0 + vec3(100.0)) * 0.3;
+        iceNoise += noise3d(p * 10.0 + vec3(200.0)) * 0.2;
+        iceNoise += noise3d(p * 20.0 + vec3(300.0)) * 0.1;
+        iceNoise = iceNoise * 0.5 + 0.5;
+        
+        // Add radial variation to break hexagonal patterns
+        float angle = atan(localPos.z, localPos.x);
+        float radialVar = sin(angle * 6.0) * 0.1 + sin(angle * 13.0) * 0.05 + 1.0;
+        iceNoise *= radialVar;
+        
+        iceCapFactor *= iceNoise;
     }
     
     vec3 surfaceColor;
@@ -489,58 +511,80 @@ vec3 getEarthSurfaceColor(vec3 localPos, float elevation, float waterMask, float
 }
 
 void main() {
+    // MOBILE-FRIENDLY: Use standard depth instead of extension
     gl_FragDepth = log2(vLogDepth) * uLogDepthBufFC * 0.5;
     
+    // MOBILE-FRIENDLY: Simplified normal and lighting
     vec3 N = normalize(vWorldNormal);
-    vec3 L = normalize(uSunPosition - vWorldPos);
+    
+    // MOBILE-FRIENDLY: Simple light direction calculation
+    vec3 lightVec = uSunPosition - vWorldPos;
+    float lightDist = length(lightVec);
+    vec3 L = lightVec / lightDist; // Manual normalize for better mobile compatibility
+    
     vec3 V = normalize(uCameraPos - vWorldPos);
     
-    // Don't override LOD colors
-    bool isLodMode = length(vColour - vec3(0.2, 0.7, 1.0)) > 0.1;
-    
-    if (isLodMode) {
+    // FIXED: Proper LOD detection with int comparison
+    if (uShowLod == 1) {
         fragColor = vec4(vColour, 1.0);
         return;
     }
     
     vec3 baseColor = getEarthSurfaceColor(vLocalPos, vElevation, vWaterMask, vCoastalDistance);
     
-    // Lighting
-    vec3 lightDir = uSunPosition - vWorldPos;
-    float lightDistance = length(lightDir);
+    // MOBILE-FRIENDLY: Simplified lighting calculation
+    float lightDistance = lightDist;
     float attenuation = 1.0 / max(1.0, lightDistance * lightDistance * 0.000001);
     
-    float NdotL = max(0.0, dot(N, L));
-    float NdotV = max(0.0, dot(N, V));
+    // Simple dot products
+    float NdotL = clamp(dot(N, L), 0.0, 1.0);
+    float NdotV = clamp(dot(N, V), 0.0, 1.0);
     
-    // Atmospheric scattering
-    float atmosphere = pow(1.0 - NdotV, 1.8);
-    vec3 atmosphereColor = vec3(0.5, 0.7, 1.0) * atmosphere * 0.2;
+    // MOBILE-FRIENDLY: Simplified atmospheric scattering
+    float atmosphere = (1.0 - NdotV);
+    atmosphere = atmosphere * atmosphere; // Manual pow(x, 2) instead of pow(x, 1.8)
+    vec3 atmosphereColor = vec3(0.5, 0.7, 1.0) * atmosphere * 0.15;
     
-    // Water specular
+    // MOBILE-FRIENDLY: Simplified water specular
     float specular = 0.0;
     if (vWaterMask > 0.5) {
-        vec3 R = reflect(-L, N);
-        float RdotV = max(0.0, dot(R, V));
-        specular = pow(RdotV, 16.0) * 0.8 * attenuation;
+        // Manual reflect calculation for better mobile compatibility
+        vec3 R = L - 2.0 * dot(L, N) * N;
+        float RdotV = clamp(dot(R, V), 0.0, 1.0);
         
-        // Fresnel
-        float fresnel = pow(1.0 - NdotV, 3.0);
+        // Manual pow calculation for mobile
+        float spec = RdotV;
+        spec = spec * spec; // ^2
+        spec = spec * spec; // ^4
+        spec = spec * spec; // ^8
+        spec = spec * spec; // ^16
+        
+        specular = spec * 0.6 * attenuation;
+        
+        // Simplified Fresnel
+        float fresnel = 1.0 - NdotV;
+        fresnel = fresnel * fresnel * fresnel; // Manual pow(x, 3)
         specular *= (0.3 + 0.7 * fresnel);
     }
     
-    // Cloud shadows
+    // MOBILE-FRIENDLY: Simplified cloud shadows
     vec3 p = vLocalPos * uNoiseScale + vec3(uNoiseOffset);
-    float cloudShadow = 1.0 - smoothstep(0.6, 0.8, noise3d(p * 1.5 + vec3(uTime * 0.02))) * 0.15;
+    float cloudNoise = noise3d(p * 1.5 + vec3(uTime * 0.02));
+    float cloudShadow = 1.0 - clamp((cloudNoise - 0.6) / 0.2, 0.0, 1.0) * 0.12;
     
-    // Final lighting
-    float ambient = 0.2;
-    float diffuse = 0.8 * NdotL * cloudShadow * attenuation;
+    // MOBILE-FRIENDLY: Simple lighting model
+    float ambient = 0.1;
+    float diffuse = 0.9 * NdotL * cloudShadow * attenuation;
     
     vec3 finalColor = baseColor * (ambient + diffuse) + atmosphereColor + vec3(specular);
     
-    // Simple gamma correction
-    finalColor = pow(finalColor, vec3(0.9));
+    // MOBILE-FRIENDLY: Simple gamma correction using manual calculation
+    float gamma = 1.0 / 1.1; // Slightly less aggressive than 0.9
+    finalColor = vec3(
+        pow(finalColor.r, gamma),
+        pow(finalColor.g, gamma), 
+        pow(finalColor.b, gamma)
+    );
     
     fragColor = vec4(finalColor, 1.0);
 }

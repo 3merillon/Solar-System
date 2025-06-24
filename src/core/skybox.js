@@ -359,6 +359,11 @@ export class SkyboxRenderer {
                 this.milkyWayStars = this.generateMilkyWayStars();
                 this.bulgeStars = this.generateBulgeStars();
                 this.globalNebulae = this.generateGlobalNebulae();
+                
+                // NEW: Enhanced fantasy nebulae with crazy warped features
+                this.fractalNebulae = this.generateFractalNebulae();
+                this.warpedNebulae = this.generateWarpedNebulae();
+                this.voidNebulae = this.generateVoidNebulae();
             }
             
             normalize(v) {
@@ -648,6 +653,108 @@ export class SkyboxRenderer {
                 return nebulae;
             }
             
+            // NEW: Fractal nebulae with self-similar structures
+            generateFractalNebulae() {
+                const nebulae = [];
+                const numNebulae = 4;
+                
+                let seed = this.masterSeed + 5000;
+                for (let i = 0; i < numNebulae; i++) {
+                    const u = this.seededRandom(seed++);
+                    const v = this.seededRandom(seed++);
+                    
+                    const theta = 2 * Math.PI * u;
+                    const phi = Math.acos(2 * v - 1);
+                    
+                    const x = Math.sin(phi) * Math.cos(theta);
+                    const y = Math.sin(phi) * Math.sin(theta);
+                    const z = Math.cos(phi);
+                    
+                    nebulae.push({
+                        x, y, z,
+                        hue: this.seededRandom(seed++) * 360,
+                        saturation: 0.6 + this.seededRandom(seed++) * 0.4,
+                        intensity: 0.4 + this.seededRandom(seed++) * 0.4,
+                        size: 0.3 + this.seededRandom(seed++) * 0.6,
+                        fractalDepth: 3 + Math.floor(this.seededRandom(seed++) * 3),
+                        fractalScale: 2.0 + this.seededRandom(seed++) * 3.0,
+                        seed: this.masterSeed + i * 500,
+                        type: 'fractal'
+                    });
+                }
+                
+                return nebulae;
+            }
+            
+            // NEW: Warped nebulae with extreme distortions
+            generateWarpedNebulae() {
+                const nebulae = [];
+                const numNebulae = 3;
+                
+                let seed = this.masterSeed + 6000;
+                for (let i = 0; i < numNebulae; i++) {
+                    const u = this.seededRandom(seed++);
+                    const v = this.seededRandom(seed++);
+                    
+                    const theta = 2 * Math.PI * u;
+                    const phi = Math.acos(2 * v - 1);
+                    
+                    const x = Math.sin(phi) * Math.cos(theta);
+                    const y = Math.sin(phi) * Math.sin(theta);
+                    const z = Math.cos(phi);
+                    
+                    nebulae.push({
+                        x, y, z,
+                        hue: 240 + this.seededRandom(seed++) * 120, // Blues to magentas
+                        saturation: 0.7 + this.seededRandom(seed++) * 0.3,
+                        intensity: 0.5 + this.seededRandom(seed++) * 0.4,
+                        size: 0.4 + this.seededRandom(seed++) * 0.8,
+                        warpStrength: 2.0 + this.seededRandom(seed++) * 4.0,
+                        warpFrequency: 1.0 + this.seededRandom(seed++) * 3.0,
+                        twistFactor: this.seededRandom(seed++) * 10.0,
+                        seed: this.masterSeed + i * 300,
+                        type: 'warped'
+                    });
+                }
+                
+                return nebulae;
+            }
+            
+            // NEW: Void nebulae with subtractive effects
+            generateVoidNebulae() {
+                const nebulae = [];
+                const numNebulae = 2;
+                
+                let seed = this.masterSeed + 7000;
+                for (let i = 0; i < numNebulae; i++) {
+                    const u = this.seededRandom(seed++);
+                    const v = this.seededRandom(seed++);
+                    
+                    const theta = 2 * Math.PI * u;
+                    const phi = Math.acos(2 * v - 1);
+                    
+                    const x = Math.sin(phi) * Math.cos(theta);
+                    const y = Math.sin(phi) * Math.sin(theta);
+                    const z = Math.cos(phi);
+                    
+                    nebulae.push({
+                        x, y, z,
+                        size: 0.5 + this.seededRandom(seed++) * 1.0,
+                        voidStrength: 0.6 + this.seededRandom(seed++) * 0.4,
+                        edgeGlow: {
+                            hue: 280 + this.seededRandom(seed++) * 80, // Purple to cyan
+                            intensity: 0.8 + this.seededRandom(seed++) * 0.2
+                        },
+                        tentacles: 4 + Math.floor(this.seededRandom(seed++) * 8),
+                        tentacleLength: 0.3 + this.seededRandom(seed++) * 0.7,
+                        seed: this.masterSeed + i * 200,
+                        type: 'void'
+                    });
+                }
+                
+                return nebulae;
+            }
+            
             generateCubemap() {
                 const faces = ['px', 'nx', 'py', 'ny', 'pz', 'nz'];
                 const textures = {};
@@ -680,6 +787,12 @@ export class SkyboxRenderer {
                 // Render in optimized order
                 this.generateMilkyWay3D(face, imageData);
                 this.generateNebulae3D(face, imageData);
+                
+                // NEW: Render enhanced fantasy nebulae
+                this.generateFractalNebulae3D(face, imageData);
+                this.generateWarpedNebulae3D(face, imageData);
+                //this.generateVoidNebulae3D(face, imageData);
+                
                 this.renderStars3D(face, imageData, this.globalStars);
                 this.renderStars3D(face, imageData, this.milkyWayStars);
                 this.renderStars3D(face, imageData, this.bulgeStars);
@@ -832,6 +945,166 @@ export class SkyboxRenderer {
                                     data[index] = Math.max(0, Math.min(255, data[index] + totalR));
                                     data[index + 1] = Math.max(0, Math.min(255, data[index + 1] + totalG));
                                     data[index + 2] = Math.max(0, Math.min(255, data[index + 2] + totalB));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // NEW: Fractal nebulae generation
+            generateFractalNebulae3D(face, data) {
+                for (let y = 0; y < this.size; y += 2) {
+                    for (let x = 0; x < this.size; x += 2) {
+                        const u = x / (this.size - 1);
+                        const v = y / (this.size - 1);
+                        
+                        const dir = this.cubeToSphere(face, u, v);
+                        
+                        for (const nebula of this.fractalNebulae) {
+                            const dx = dir.x - nebula.x;
+                            const dy = dir.y - nebula.y;
+                            const dz = dir.z - nebula.z;
+                            
+                            const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                            
+                            if (distance < nebula.size) {
+                                // Fractal noise with multiple octaves
+                                let fractalNoise = 0;
+                                let amplitude = 1.0;
+                                let frequency = nebula.fractalScale;
+                                
+                                for (let octave = 0; octave < nebula.fractalDepth; octave++) {
+                                    fractalNoise += Math.abs(this.noise3D(
+                                        dir.x * frequency + nebula.seed,
+                                        dir.y * frequency + nebula.seed,
+                                        dir.z * frequency + nebula.seed
+                                    )) * amplitude;
+                                    
+                                    amplitude *= 0.5;
+                                    frequency *= 2.0;
+                                }
+                                
+                                const falloff = Math.pow(1 - distance / nebula.size, 2);
+                                const intensity = fractalNoise * falloff * nebula.intensity;
+                                
+                                if (intensity > 0.02) {
+                                    const [r, g, b] = this.hslToRgb(nebula.hue, nebula.saturation, 0.5);
+                                    
+                                    const index = (y * this.size + x) * 4;
+                                    data[index] = Math.max(0, Math.min(255, data[index] + r * intensity));
+                                    data[index + 1] = Math.max(0, Math.min(255, data[index + 1] + g * intensity));
+                                    data[index + 2] = Math.max(0, Math.min(255, data[index + 2] + b * intensity));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // NEW: Warped nebulae generation
+            generateWarpedNebulae3D(face, data) {
+                for (let y = 0; y < this.size; y += 2) {
+                    for (let x = 0; x < this.size; x += 2) {
+                        const u = x / (this.size - 1);
+                        const v = y / (this.size - 1);
+                        
+                        const dir = this.cubeToSphere(face, u, v);
+                        
+                        for (const nebula of this.warpedNebulae) {
+                            const dx = dir.x - nebula.x;
+                            const dy = dir.y - nebula.y;
+                            const dz = dir.z - nebula.z;
+                            
+                            const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                            
+                            if (distance < nebula.size) {
+                                // Apply extreme warping
+                                const warpX = dx + Math.sin(dy * nebula.warpFrequency + nebula.seed) * nebula.warpStrength * 0.1;
+                                const warpY = dy + Math.cos(dz * nebula.warpFrequency + nebula.seed) * nebula.warpStrength * 0.1;
+                                const warpZ = dz + Math.sin(dx * nebula.warpFrequency + nebula.seed) * nebula.warpStrength * 0.1;
+                                
+                                // Twisted coordinates
+                                const radius = Math.sqrt(warpX * warpX + warpY * warpY);
+                                const angle = Math.atan2(warpY, warpX) + radius * nebula.twistFactor;
+                                const twistedX = radius * Math.cos(angle);
+                                const twistedY = radius * Math.sin(angle);
+                                
+                                const warpedNoise = Math.abs(this.noise3D(
+                                    twistedX * 8 + nebula.seed,
+                                    twistedY * 8 + nebula.seed,
+                                    warpZ * 8 + nebula.seed
+                                ));
+                                
+                                const falloff = Math.pow(1 - distance / nebula.size, 1.5);
+                                const intensity = warpedNoise * falloff * nebula.intensity;
+                                
+                                if (intensity > 0.02) {
+                                    const [r, g, b] = this.hslToRgb(nebula.hue, nebula.saturation, 0.6);
+                                    
+                                    const index = (y * this.size + x) * 4;
+                                    data[index] = Math.max(0, Math.min(255, data[index] + r * intensity));
+                                    data[index + 1] = Math.max(0, Math.min(255, data[index + 1] + g * intensity));
+                                    data[index + 2] = Math.max(0, Math.min(255, data[index + 2] + b * intensity));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // NEW: Void nebulae with subtractive effects
+            generateVoidNebulae3D(face, data) {
+                for (let y = 0; y < this.size; y++) {
+                    for (let x = 0; x < this.size; x++) {
+                        const u = x / (this.size - 1);
+                        const v = y / (this.size - 1);
+                        
+                        const dir = this.cubeToSphere(face, u, v);
+                        
+                        for (const nebula of this.voidNebulae) {
+                            const dx = dir.x - nebula.x;
+                            const dy = dir.y - nebula.y;
+                            const dz = dir.z - nebula.z;
+                            
+                            const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                            
+                            if (distance < nebula.size) {
+                                // Core void effect
+                                const coreRadius = nebula.size * 0.3;
+                                if (distance < coreRadius) {
+                                    const voidIntensity = (1 - distance / coreRadius) * nebula.voidStrength;
+                                    const index = (y * this.size + x) * 4;
+                                    data[index] = Math.max(0, data[index] * (1 - voidIntensity));
+                                    data[index + 1] = Math.max(0, data[index + 1] * (1 - voidIntensity));
+                                    data[index + 2] = Math.max(0, data[index + 2] * (1 - voidIntensity));
+                                }
+                                
+                                // Tentacle-like structures
+                                for (let t = 0; t < nebula.tentacles; t++) {
+                                    const tentacleAngle = (t / nebula.tentacles) * Math.PI * 2;
+                                    const tentacleDir = {
+                                        x: Math.cos(tentacleAngle),
+                                        y: Math.sin(tentacleAngle),
+                                        z: 0
+                                    };
+                                    
+                                    const tentacleDot = dx * tentacleDir.x + dy * tentacleDir.y + dz * tentacleDir.z;
+                                    const tentacleDistance = Math.abs(tentacleDot);
+                                    
+                                    if (tentacleDistance < nebula.tentacleLength && distance > coreRadius) {
+                                        const tentacleIntensity = (1 - tentacleDistance / nebula.tentacleLength) * 
+                                                               (1 - (distance - coreRadius) / (nebula.size - coreRadius));
+                                        
+                                        // Edge glow effect
+                                        const [r, g, b] = this.hslToRgb(nebula.edgeGlow.hue, 0.8, 0.5);
+                                        const glowIntensity = tentacleIntensity * nebula.edgeGlow.intensity * 0.3;
+                                        
+                                        const index = (y * this.size + x) * 4;
+                                        data[index] = Math.max(0, Math.min(255, data[index] + r * glowIntensity));
+                                        data[index + 1] = Math.max(0, Math.min(255, data[index + 1] + g * glowIntensity));
+                                        data[index + 2] = Math.max(0, Math.min(255, data[index + 2] + b * glowIntensity));
+                                    }
                                 }
                             }
                         }

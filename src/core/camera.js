@@ -2,8 +2,8 @@ import { nrm, cr, dt, sub, add, lookAt } from './utils.js';
 
 export class EnhancedCamera {
     constructor() {
-        // Camera position in world coordinates (high precision)
-        this.worldPosition = [0, 50, 500];
+        // IMPROVED: Start near Earth with Sun in backdrop
+        this.worldPosition = [0, 0, 0];
         this.forward = [0, 0, -1];
         this.up = [0, 1, 0];
         this.velocity = [0, 0, 0];
@@ -19,7 +19,7 @@ export class EnhancedCamera {
         this.friction = 0.85;
         
         // Orbital camera properties
-        this.mode = 'free';
+        this.mode = 'free'; // START IN FREE MODE
         this.target = null;
         this.orbitDistance = 100;
         this.orbitAngleH = 0;
@@ -36,8 +36,125 @@ export class EnhancedCamera {
         this.touchStartTime = 0;
         
         this.solarSystem = null;
+        this.initialSetupComplete = false;
         
         this.setupControls();
+    }
+    
+    // Initialize camera near Earth with optimal view in FREE MODE
+    initializeNearEarth() {
+        if (!this.solarSystem || this.initialSetupComplete) return;
+        
+        const earth = this.solarSystem.getBody('earth');
+        const sun = this.solarSystem.getBody('sun');
+        
+        if (!earth || !sun) return;
+        
+        // Get Earth and Sun positions
+        const earthPos = earth.position;
+        const sunPos = sun.position;
+        
+        // Calculate Sun-to-Earth vector (opposite direction for proper orientation)
+        const sunToEarth = [
+            earthPos[0] - sunPos[0],
+            earthPos[1] - sunPos[1], 
+            earthPos[2] - sunPos[2]
+        ];
+        const sunEarthDistance = Math.sqrt(
+            sunToEarth[0] * sunToEarth[0] + 
+            sunToEarth[1] * sunToEarth[1] + 
+            sunToEarth[2] * sunToEarth[2]
+        );
+        
+        // Normalize Sun-to-Earth vector
+        const sunToEarthNorm = [
+            sunToEarth[0] / sunEarthDistance,
+            sunToEarth[1] / sunEarthDistance,
+            sunToEarth[2] / sunEarthDistance
+        ];
+        
+        // Position camera further from Earth (about 6x Earth's radius for better perspective)
+        const cameraDistance = earth.radius * 10.0;
+        
+        // Position camera between Earth and Sun, but offset for dramatic view
+        // Use a smaller offset angle so we're more aligned with Sun-Earth line
+        const offsetAngle = Math.PI * -0.07;
+        const cosOffset = Math.cos(offsetAngle);
+        const sinOffset = Math.sin(offsetAngle);
+        
+        // Create perpendicular vector for offset (in XZ plane primarily)
+        const perpendicular = [
+            -sunToEarthNorm[2], // Perpendicular in XZ plane
+            0,
+            sunToEarthNorm[0]
+        ];
+        const perpLength = Math.sqrt(perpendicular[0] * perpendicular[0] + perpendicular[2] * perpendicular[2]);
+        if (perpLength > 0) {
+            perpendicular[0] /= perpLength;
+            perpendicular[2] /= perpLength;
+        }
+        
+        // Calculate camera offset from Earth - position BEHIND Earth relative to Sun
+        // This puts Earth between camera and Sun for proper backlighting
+        const cameraOffset = [
+            (sunToEarthNorm[0] * cosOffset + perpendicular[0] * sinOffset) * cameraDistance,
+            sunToEarthNorm[1] * cameraDistance + earth.radius * 0.3, // Reduced vertical offset
+            (sunToEarthNorm[2] * cosOffset + perpendicular[2] * sinOffset) * cameraDistance
+        ];
+        
+        // Set camera position
+        this.worldPosition = [
+            earthPos[0] + cameraOffset[0],
+            earthPos[1] + cameraOffset[1],
+            earthPos[2] + cameraOffset[2]
+        ];
+        
+        // STAY IN FREE MODE - just set orientation to look towards Sun past Earth
+        this.mode = 'free';
+        this.target = null; // No target in free mode
+        
+        // Calculate direction that looks from camera towards Sun, with Earth in foreground
+        const cameraToSun = [
+            sunPos[0] - this.worldPosition[0],
+            sunPos[1] - this.worldPosition[1],
+            sunPos[2] - this.worldPosition[2]
+        ];
+        
+        // Set camera orientation to look towards Sun (Earth will be in foreground)
+        this.forward = nrm(cameraToSun);
+        
+        // Set up vector pointing generally upward
+        this.up = [0, 1, 0];
+        
+        // Ensure right vector is perpendicular
+        const right = nrm(cr(this.forward, this.up));
+        this.up = nrm(cr(right, this.forward));
+        
+        // Clear any velocity
+        this.velocity = [0, 0, 0];
+        
+        this.initialSetupComplete = true;
+        
+        // Calculate distances for logging
+        const distanceToEarth = Math.sqrt(
+            cameraOffset[0] * cameraOffset[0] + 
+            cameraOffset[1] * cameraOffset[1] + 
+            cameraOffset[2] * cameraOffset[2]
+        );
+        
+        const distanceToSun = Math.sqrt(
+            cameraToSun[0] * cameraToSun[0] + 
+            cameraToSun[1] * cameraToSun[1] + 
+            cameraToSun[2] * cameraToSun[2]
+        );
+        
+        console.log('Camera initialized in FREE MODE with Earth in foreground and Sun in view');
+        console.log(`Earth position: [${earthPos[0].toFixed(1)}, ${earthPos[1].toFixed(1)}, ${earthPos[2].toFixed(1)}]`);
+        console.log(`Sun position: [${sunPos[0].toFixed(1)}, ${sunPos[1].toFixed(1)}, ${sunPos[2].toFixed(1)}]`);
+        console.log(`Camera position: [${this.worldPosition[0].toFixed(1)}, ${this.worldPosition[1].toFixed(1)}, ${this.worldPosition[2].toFixed(1)}]`);
+        console.log(`Distance to Earth: ${distanceToEarth.toFixed(1)} units (${(distanceToEarth/earth.radius).toFixed(1)}x Earth radius)`);
+        console.log(`Distance to Sun: ${distanceToSun.toFixed(1)} units`);
+        console.log(`Camera looking towards Sun with Earth in foreground`);
     }
     
     // Get camera position for external use (world coordinates)
@@ -70,6 +187,8 @@ export class EnhancedCamera {
     
     setSolarSystem(solarSystem) {
         this.solarSystem = solarSystem;
+        // Initialize near Earth once solar system is available
+        setTimeout(() => this.initializeNearEarth(), 100);
     }
     
     setupControls() {
@@ -638,11 +757,9 @@ export class EnhancedCamera {
     }
     
     reset() {
-        this.worldPosition = [0, 50, 500];
-        this.forward = [0, 0, -1];
-        this.up = [0, 1, 0];
-        this.velocity = [0, 0, 0];
-        this.setFreeMode();
+        // Reset to the nice Earth view instead of arbitrary position
+        this.initialSetupComplete = false;
+        this.initializeNearEarth();
     }
     
     getCurrentTarget() {

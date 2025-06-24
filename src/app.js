@@ -1,31 +1,32 @@
-import { EnhancedCamera } from './camera.js';
-import { SolarSystem } from './solarSystem.js';
-import { ScreenSpaceGPULODRenderer, LineRenderer } from './renderer.js';
-import { FrustumCuller, mat4MultiplyViewProj } from './frustumCulling.js';
-import { SkyboxRenderer } from './skybox.js';
-import { AudioManager } from './audio-manager.js';
-import { ASTRONOMICAL_DATA, formatNumber, formatDistance, formatTemperature, formatTimePeriod } from './astronomical-data.js';
+import { EnhancedCamera } from './core/camera.js';
+import { SolarSystem } from './core/solarSystem.js';
+import { ScreenSpaceGPULODRenderer, LineRenderer } from './core/renderer.js';
+import { FrustumCuller, mat4MultiplyViewProj } from './core/frustumCulling.js';
+import { SkyboxRenderer } from './core/skybox.js';
+import { AudioManager } from './core/audio-manager.js';
+import { ASTRONOMICAL_DATA, formatNumber, formatDistance, formatTemperature, formatTimePeriod } from './core/astronomical-data.js';
 
 export class RetroSolarSystemApp {
     constructor(gl) {
         this.gl = gl;
-        this.camera = new EnhancedCamera();
         this.solarSystem = new SolarSystem();
-        
+        this.camera = new EnhancedCamera();
         this.camera.setSolarSystem(this.solarSystem);
-        
         this.renderer = new ScreenSpaceGPULODRenderer(gl);
         this.lineRenderer = new LineRenderer(gl);
         this.skyboxRenderer = new SkyboxRenderer(gl);
         this.frustumCuller = new FrustumCuller();
-        
+
         // CAMERA-CENTERED: Set camera reference on renderers
         this.renderer.setCamera(this.camera);
         this.lineRenderer.setCamera(this.camera);
-        
+
         // Initialize audio manager
         this.audioManager = new AudioManager();
         this.audioInitialized = false;
+
+        // Terrain is always initialized (no async)
+        this.terrainInitialized = true;
 
         this.showLod = false;
         this.animateWaves = true;
@@ -56,13 +57,26 @@ export class RetroSolarSystemApp {
         this.setupUI();
         this.updateTimeDisplay();
         this.updateSpeedDisplay();
-        
+
         document.getElementById('pixelSizeSlider').value = 6;
         document.getElementById('pixelSizeValue').textContent = '1px';
-        
         document.getElementById('orbitSpeedSlider').value = 66.2;
-        
+
         this.updateSolarSystemSpeed();
+    }
+
+    static SPEED_EXPONENT = 4.0;
+
+    static sliderValueToSpeed(raw, min, max) {
+        const t = (raw - min) / (max - min);
+        return min + (max - min) * Math.pow(t, RetroSolarSystemApp.SPEED_EXPONENT);
+    }
+
+    static speedToSliderValue(speed, min, max) {
+        let t = (speed - min) / (max - min);
+        if (t < 0) t = 0;
+        if (t > 1) t = 1;
+        return min + (max - min) * Math.pow(t, 1 / RetroSolarSystemApp.SPEED_EXPONENT);
     }
 
     async initializeAudio() {
@@ -166,9 +180,20 @@ export class RetroSolarSystemApp {
         // Enhanced Status HUD Camera Controls
         const speedSlider = document.getElementById('speedSlider');
         const speedValue = document.getElementById('speedValue');
+        const min = parseFloat(speedSlider.min);
+        const max = parseFloat(speedSlider.max);
+
+        // Set default speed (e.g. 0.3x)
+        const defaultSpeed = 0.3;
+        speedSlider.value = RetroSolarSystemApp.speedToSliderValue(defaultSpeed, min, max);
+        this.camera.speedMultiplier = defaultSpeed;
+        speedValue.textContent = defaultSpeed.toFixed(2) + 'x';
+
         speedSlider.addEventListener('input', () => {
-            this.camera.speedMultiplier = parseFloat(speedSlider.value);
-            speedValue.textContent = speedSlider.value + 'x';
+            const raw = parseFloat(speedSlider.value);
+            const speed = RetroSolarSystemApp.sliderValueToSpeed(raw, min, max);
+            this.camera.speedMultiplier = speed;
+            speedValue.textContent = speed.toFixed(2) + 'x';
         });
 
         // Free Flight Button in Status HUD
@@ -231,6 +256,25 @@ export class RetroSolarSystemApp {
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
                 this.hideDateModal();
+            }
+        });
+        
+        // Prevent spacebar from triggering buttons
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') {
+                const el = document.activeElement;
+                // If focus is NOT on an input, textarea, or contenteditable, prevent default
+                if (
+                    el &&
+                    (
+                        el.tagName === 'BUTTON' ||
+                        el.tagName === 'A' ||
+                        el.tagName === 'INPUT' && el.type !== 'text' && el.type !== 'search' && el.type !== 'password' && el.type !== 'email' ||
+                        el.tagName === 'SELECT'
+                    )
+                ) {
+                    e.preventDefault();
+                }
             }
         });
 
@@ -739,93 +783,96 @@ export class RetroSolarSystemApp {
             this.skyboxRenderer.render(viewMatrix, projMatrix);
         }
 
-        const viewProjMatrix = mat4MultiplyViewProj(viewMatrix, projMatrix);
-        const sunWorldPosition = this.solarSystem.getSunPosition();
-        const sunCameraRelativePosition = this.camera.worldToCameraRelative(sunWorldPosition);
+        // Only render planets if terrain is initialized
+        if (this.terrainInitialized) {
+            const viewProjMatrix = mat4MultiplyViewProj(viewMatrix, projMatrix);
+            const sunWorldPosition = this.solarSystem.getSunPosition();
+            const sunCameraRelativePosition = this.camera.worldToCameraRelative(sunWorldPosition);
 
-        let totalPatches = 0;
-        let totalVertices = 0;
-        let visiblePlanets = 0;
-        let culledPlanets = 0;
-        let totalFrustumCulled = 0;
-        let totalBackfaceCulled = 0;
+            let totalPatches = 0;
+            let totalVertices = 0;
+            let visiblePlanets = 0;
+            let culledPlanets = 0;
+            let totalFrustumCulled = 0;
+            let totalBackfaceCulled = 0;
 
-        // COLLECT RING DATA while rendering planets
-        const ringDataArray = [];
-
-        for (const body of this.solarSystem.getAllBodies()) {
-            if (this.frustumCuller.isPlanetVisible(body, viewProjMatrix, this.camera)) {
-                visiblePlanets++;
-                
-                const stats = this.renderer.renderBody(
-                    body,
-                    this.camera.worldPosition,
-                    this.camera.forward,
-                    viewMatrix,
-                    projMatrix,
-                    this.animateWaves ? this.waveTime : 0,
-                    this.showLod,
-                    this.animateWaves,
-                    sunCameraRelativePosition,
-                    this.maxLod
-                );
-
-                totalPatches += stats.patches;
-                totalVertices += stats.vertices;
-                
-                if (stats.cullStats) {
-                    totalFrustumCulled += stats.cullStats.frustumCulled;
-                    totalBackfaceCulled += stats.cullStats.backfaceCulled;
-                }
-
-                // COLLECT RING DATA
-                if (stats.ringData) {
-                    ringDataArray.push(stats.ringData);
-                }
-            } else {
-                culledPlanets++;
-            }
-        }
-
-        // Render orbits and axes
-        if (this.showAxisOrbit) {
-            gl.disable(gl.CULL_FACE);
-            gl.lineWidth(2);
-            gl.enable(gl.DEPTH_TEST);
-            gl.depthFunc(gl.LEQUAL);
+            // COLLECT RING DATA while rendering planets
+            const ringDataArray = [];
 
             for (const body of this.solarSystem.getAllBodies()) {
                 if (this.frustumCuller.isPlanetVisible(body, viewProjMatrix, this.camera)) {
-                    this.lineRenderer.renderAxis(body, viewMatrix, projMatrix);
-                    this.lineRenderer.renderOrbit(body, viewMatrix, projMatrix, this.solarSystem.time);
+                    visiblePlanets++;
+                    
+                    const stats = this.renderer.renderBody(
+                        body,
+                        this.camera.worldPosition,
+                        this.camera.forward,
+                        viewMatrix,
+                        projMatrix,
+                        this.animateWaves ? this.waveTime : 0,
+                        this.showLod,
+                        this.animateWaves,
+                        sunCameraRelativePosition,
+                        this.maxLod
+                    );
+
+                    totalPatches += stats.patches;
+                    totalVertices += stats.vertices;
+                    
+                    if (stats.cullStats) {
+                        totalFrustumCulled += stats.cullStats.frustumCulled;
+                        totalBackfaceCulled += stats.cullStats.backfaceCulled;
+                    }
+
+                    // COLLECT RING DATA
+                    if (stats.ringData) {
+                        ringDataArray.push(stats.ringData);
+                    }
                 } else {
-                    this.lineRenderer.renderOrbit(body, viewMatrix, projMatrix, this.solarSystem.time);
+                    culledPlanets++;
                 }
             }
 
-            gl.enable(gl.CULL_FACE);
-            gl.depthFunc(gl.LESS);
+            // Render orbits and axes
+            if (this.showAxisOrbit) {
+                gl.disable(gl.CULL_FACE);
+                gl.lineWidth(2);
+                gl.enable(gl.DEPTH_TEST);
+                gl.depthFunc(gl.LEQUAL);
+
+                for (const body of this.solarSystem.getAllBodies()) {
+                    if (this.frustumCuller.isPlanetVisible(body, viewProjMatrix, this.camera)) {
+                        this.lineRenderer.renderAxis(body, viewMatrix, projMatrix);
+                        this.lineRenderer.renderOrbit(body, viewMatrix, projMatrix, this.solarSystem.time);
+                    } else {
+                        this.lineRenderer.renderOrbit(body, viewMatrix, projMatrix, this.solarSystem.time);
+                    }
+                }
+
+                gl.enable(gl.CULL_FACE);
+                gl.depthFunc(gl.LESS);
+            }
+
+            // RENDER ALL RINGS AFTER ALL CELESTIAL BODIES
+            if (ringDataArray.length > 0) {
+                this.renderer.ringSystem.renderAllRings(ringDataArray);
+            }
+
+            // Update performance stats
+            this.performanceStats.totalPatches = totalPatches;
+            this.performanceStats.totalVertices = totalVertices;
+            this.performanceStats.visiblePlanets = visiblePlanets;
+            this.performanceStats.culledPlanets = culledPlanets;
+            this.performanceStats.frustumCulledPatches = totalFrustumCulled;
+            this.performanceStats.backfaceCulledPatches = totalBackfaceCulled;
+
+            document.getElementById('patchCount').textContent = totalPatches.toLocaleString();
+            document.getElementById('vertexCount').textContent = totalVertices.toLocaleString();
+            document.getElementById('visibleCount').textContent = visiblePlanets;
+            document.getElementById('culledCount').textContent = culledPlanets;
+            document.getElementById('frustumCulledCount').textContent = totalFrustumCulled.toLocaleString();
+            document.getElementById('backfaceCulledCount').textContent = totalBackfaceCulled.toLocaleString();
         }
-
-        // RENDER ALL RINGS AFTER ALL CELESTIAL BODIES
-        if (ringDataArray.length > 0) {
-            this.renderer.ringSystem.renderAllRings(ringDataArray);
-        }
-
-        // Update performance stats
-        this.performanceStats.totalPatches = totalPatches;
-        this.performanceStats.totalVertices = totalVertices;
-        this.performanceStats.visiblePlanets = visiblePlanets;
-        this.performanceStats.culledPlanets = culledPlanets;
-        this.performanceStats.frustumCulledPatches = totalFrustumCulled;
-        this.performanceStats.backfaceCulledPatches = totalBackfaceCulled;
-
-        document.getElementById('patchCount').textContent = totalPatches.toLocaleString();
-        document.getElementById('vertexCount').textContent = totalVertices.toLocaleString();
-        document.getElementById('visibleCount').textContent = visiblePlanets;
-        document.getElementById('culledCount').textContent = culledPlanets;
-        document.getElementById('frustumCulledCount').textContent = totalFrustumCulled.toLocaleString();
-        document.getElementById('backfaceCulledCount').textContent = totalBackfaceCulled.toLocaleString();
     }
 
     run() {

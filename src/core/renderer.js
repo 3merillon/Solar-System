@@ -1,14 +1,9 @@
 import { mat4Multiply, mat4RotateX, mat4Identity } from './utils.js';
 import { ShaderManager } from './shader-manager.js';
-import { sunVertexShaderSource, sunFragmentShaderSource, createSunUniformSetup } from './planet_shaders/sun-shaders.js';
-import { setupPlanetShaders } from './planet-shaders-setup.js';
+import { sunVertexShaderSource, sunFragmentShaderSource, createSunUniformSetup } from '../planet_shaders/sun-shaders.js';
+import { setupPlanetShaders } from '../planet_shaders/setup/planet-shaders-setup.js';
 import { RingSystem } from './ring-system.js';
-import { 
-    logDepthVertexShaderSource, 
-    logDepthFragmentShaderSource, 
-    logDepthLineVertexShaderSource, 
-    logDepthLineFragmentShaderSource 
-} from './shaders.js';
+import { logDepthVertexShaderSource, logDepthFragmentShaderSource, logDepthLineVertexShaderSource, logDepthLineFragmentShaderSource } from '../planet_shaders/shaders.js';
 
 export class LineRenderer {
     constructor(gl) {
@@ -118,7 +113,7 @@ export class LineRenderer {
         gl.uniformMatrix4fv(this.uniforms.uProj, false, new Float32Array(projMatrix));
         gl.uniform1f(this.uniforms.uLogDepthBufFC, this.logDepthBufFC);
 
-        gl.uniform3fv(this.uniforms.uColor, new Float32Array([0.1, 1.0, 0.3]));
+        gl.uniform3fv(this.uniforms.uColor, new Float32Array([0.0, 0.8, 0.8]));
         gl.drawArrays(gl.LINES, 0, 2);
 
         gl.bindVertexArray(null);
@@ -827,6 +822,111 @@ export class ScreenSpaceGPULODRenderer {
         this.currentTargetIndex = 6;
     }
 
+    setTerrainInitialized(initialized) {
+        this.terrainInitialized = initialized;
+        if (initialized) {
+            console.log('Renderer: Terrain initialization complete');
+        }
+    }
+
+    setPrecomputedTerrain(terrainMap) {
+        this.precomputedTerrain = terrainMap;
+        console.log('Renderer: Received precomputed terrain for', terrainMap.size, 'bodies');
+        
+        // Pre-load geometry into GPU buffers
+        this.preloadTerrainToGPU();
+    }
+
+    preloadTerrainToGPU() {
+        if (!this.precomputedTerrain) return;
+        
+        this.terrainBuffers = new Map();
+        
+        for (const [bodyId, terrainData] of this.precomputedTerrain) {
+            // Create dedicated buffers for this body
+            const buffers = this.createBodyBuffers(terrainData.geometry);
+            this.terrainBuffers.set(bodyId, buffers);
+            
+            console.log(`Pre-loaded ${bodyId} terrain to GPU:`, {
+                vertices: terrainData.stats.vertexCount,
+                indices: terrainData.stats.indexCount
+            });
+        }
+    }
+
+    createBodyBuffers(geometry) {
+        const gl = this.gl;
+        
+        const buffers = {
+            position: gl.createBuffer(),
+            morphable: gl.createBuffer(),
+            lod: gl.createBuffer(),
+            morphFactor: gl.createBuffer(),
+            edge0: gl.createBuffer(),
+            edge1: gl.createBuffer(),
+            indices: gl.createBuffer(),
+            vao: gl.createVertexArray()
+        };
+        
+        // Upload geometry to GPU
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.position);
+        gl.bufferData(gl.ARRAY_BUFFER, geometry.vertices, gl.STATIC_DRAW);
+        
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.morphable);
+        gl.bufferData(gl.ARRAY_BUFFER, geometry.morphable, gl.STATIC_DRAW);
+        
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.lod);
+        gl.bufferData(gl.ARRAY_BUFFER, geometry.lod, gl.STATIC_DRAW);
+        
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.morphFactor);
+        gl.bufferData(gl.ARRAY_BUFFER, geometry.morphFactor, gl.STATIC_DRAW);
+        
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.edge0);
+        gl.bufferData(gl.ARRAY_BUFFER, geometry.edge0, gl.STATIC_DRAW);
+        
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.edge1);
+        gl.bufferData(gl.ARRAY_BUFFER, geometry.edge1, gl.STATIC_DRAW);
+        
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffers.indices);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, geometry.indices, gl.STATIC_DRAW);
+        
+        // Set up VAO
+        gl.bindVertexArray(buffers.vao);
+        
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.position);
+        gl.enableVertexAttribArray(0);
+        gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+        
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.morphable);
+        gl.enableVertexAttribArray(1);
+        gl.vertexAttribPointer(1, 1, gl.FLOAT, false, 0, 0);
+        
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.lod);
+        gl.enableVertexAttribArray(2);
+        gl.vertexAttribPointer(2, 1, gl.FLOAT, false, 0, 0);
+        
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.morphFactor);
+        gl.enableVertexAttribArray(3);
+        gl.vertexAttribPointer(3, 1, gl.FLOAT, false, 0, 0);
+        
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.edge0);
+        gl.enableVertexAttribArray(4);
+        gl.vertexAttribPointer(4, 3, gl.FLOAT, false, 0, 0);
+        
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.edge1);
+        gl.enableVertexAttribArray(5);
+        gl.vertexAttribPointer(5, 3, gl.FLOAT, false, 0, 0);
+        
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffers.indices);
+        
+        gl.bindVertexArray(null);
+        
+        return {
+            ...buffers,
+            indexCount: geometry.indices.length
+        };
+    }
+
     // Add method to set camera reference
     setCamera(camera) {
         this.camera = camera;
@@ -1225,7 +1325,7 @@ export class ScreenSpaceGPULODRenderer {
         return geometry.I.length;
     }
     
-    renderBody(body, cameraPos, cameraForward, viewMatrix, projMatrix, time, showLod, animateWaves, sunPosition, maxLod = 8) {
+    renderDynamicBody(body, cameraPos, cameraForward, viewMatrix, projMatrix, time, showLod, animateWaves, sunPosition, maxLod = 8) {
         const gl = this.gl;
         const canvasWidth = gl.canvas.width;
         const canvasHeight = gl.canvas.height;
@@ -1387,6 +1487,79 @@ export class ScreenSpaceGPULODRenderer {
             vertices: geometry.V.length / 3,
             cullStats: this.cullStats,
             ringData: ringData  // Return ring data for deferred rendering
+        };
+    }
+
+    // Update renderBody to use precomputed terrain when available
+    renderBody(body, cameraPos, cameraForward, viewMatrix, projMatrix, time, showLod, animateWaves, sunPosition, maxLod = 8) {
+        const gl = this.gl;
+        
+        if (!this.camera) {
+            console.error('Camera not set on renderer. Call setCamera() first.');
+            return { patches: 0, vertices: 0, cullStats: this.cullStats, ringData: null };
+        }
+        
+        // Check if we have precomputed terrain for this body
+        if (this.terrainBuffers && this.terrainBuffers.has(body.id)) {
+            return this.renderPrecomputedBody(body, cameraPos, cameraForward, viewMatrix, projMatrix, time, showLod, animateWaves, sunPosition);
+        }
+        
+        // Fall back to dynamic generation (your existing code)
+        return this.renderDynamicBody(body, cameraPos, cameraForward, viewMatrix, projMatrix, time, showLod, animateWaves, sunPosition, maxLod);
+    }
+
+    renderPrecomputedBody(body, cameraPos, cameraForward, viewMatrix, projMatrix, time, showLod, animateWaves, sunPosition) {
+        const gl = this.gl;
+        
+        // Get precomputed terrain data
+        const terrainData = this.precomputedTerrain.get(body.id);
+        const buffers = this.terrainBuffers.get(body.id);
+        
+        if (!terrainData || !buffers) {
+            console.warn(`No precomputed terrain for ${body.id}`);
+            return { patches: 0, vertices: 0, cullStats: this.cullStats, ringData: null };
+        }
+        
+        // CAMERA-CENTERED: Convert positions to camera-relative coordinates
+        const cameraRelativeBodyPos = this.camera.worldToCameraRelative(body.position);
+        const cameraRelativeSunPos = this.camera.worldToCameraRelative(sunPosition);
+        
+        // Create camera-relative world matrix
+        const cameraRelativeWorldMatrix = [...body.worldMatrix];
+        cameraRelativeWorldMatrix[12] = cameraRelativeBodyPos[0];
+        cameraRelativeWorldMatrix[13] = cameraRelativeBodyPos[1]; 
+        cameraRelativeWorldMatrix[14] = cameraRelativeBodyPos[2];
+        
+        // Get shader and render
+        const shaderData = this.shaderManager.getShaderForPlanet(body.id);
+        const program = shaderData.program;
+        const uniforms = shaderData.uniforms;
+        const uniformSetup = shaderData.uniformSetup;
+        
+        gl.useProgram(program);
+        gl.bindVertexArray(buffers.vao);
+        
+        // Create camera-relative body for uniforms
+        const cameraRelativeBody = {
+            ...body,
+            worldMatrix: cameraRelativeWorldMatrix
+        };
+        
+        // Set uniforms
+        uniformSetup(gl, uniforms, cameraRelativeBody, [0, 0, 0], viewMatrix, projMatrix, time, showLod, animateWaves, cameraRelativeSunPos, this.logDepthBufFC);
+        
+        // Render
+        gl.drawElements(gl.TRIANGLES, buffers.indexCount, gl.UNSIGNED_INT, 0);
+        gl.bindVertexArray(null);
+        
+        // Collect ring data
+        const ringData = this.ringSystem.collectRingData(body, viewMatrix, projMatrix, time, sunPosition);
+        
+        return { 
+            patches: terrainData.patches, 
+            vertices: terrainData.stats.vertexCount,
+            cullStats: { frustumCulled: 0, backfaceCulled: 0 }, // Precomputed, so no runtime culling
+            ringData: ringData
         };
     }
     

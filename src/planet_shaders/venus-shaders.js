@@ -336,8 +336,8 @@ void main() {
     float cloudShadow = 1.0 - smoothstep(0.4, 0.8, cloudDensity) * 0.4;
     
     // Venus has very diffuse lighting due to thick atmosphere
-    float ambient = 0.4; // High ambient due to atmospheric scattering
-    float diffuse = 0.6 * NdotL * cloudShadow;
+    float ambient = 0.2; // High ambient due to atmospheric scattering
+    float diffuse = 0.8 * NdotL * cloudShadow;
     
     vec3 finalColor = baseColor * (ambient + diffuse) + atmosphereColor + greenhouseGlow;
     

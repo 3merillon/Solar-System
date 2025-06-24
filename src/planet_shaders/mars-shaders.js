@@ -562,8 +562,8 @@ void main() {
     vec3 dustColor = vec3(0.7, 0.5, 0.3);
     
     // Enhanced lighting model for Mars
-    float ambient = 0.28; // Higher ambient due to dust in atmosphere
-    float diffuse = 0.72 * NdotL * attenuation;
+    float ambient = 0.08; // Higher ambient due to dust in atmosphere
+    float diffuse = 0.92 * NdotL * attenuation;
     
     // Subsurface scattering for dusty surfaces
     float subsurface = max(0.0, dot(-N, L)) * 0.2;
