@@ -785,7 +785,7 @@ export class ScreenSpaceGPULODRenderer {
         this.shaderManager = new ShaderManager(gl);
         
         this.setupShaders();
-        this.setupCustomShaders();
+        // this.setupCustomShaders(); // Disabled custom shaders due to long shader build time
         this.setupBuffers();
         this.stats = { patches: 0, drawCalls: 0, vertices: 0, totalPatches: 0 };
 
