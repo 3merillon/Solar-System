@@ -231,6 +231,9 @@ pub struct BodyOptions<'a> {
     pub decimate_height: usize,
     /// Finest level baked. D0 to D3 are the pinned pack; finer pages go in page bundles.
     pub finest: u8,
+    /// The pack's version, written to the manifest as `NAME-vN`: it goes up whenever the pack's content changes, and the
+    /// pack is published in a folder of that name, so a reader never mixes pages of two bakes.
+    pub version: u32,
     pub out: &'a Path,
     pub map_out: &'a Path,
     pub credit: &'a str,
@@ -324,15 +327,18 @@ pub fn bake(options: &BodyOptions) -> Result<(), String> {
     };
     let keys = PageKey::all_pinned();
     let pages = bake::bake_pages(&keys, &h, &albedo, &opt, options.threads);
-    let extra = json!({
+    let mut extra = json!({
         "body": options.name,
         "image_is": options.image_is,
         "image": options.image.file_name().map(|f| f.to_string_lossy().to_string()),
         "height": options.height.and_then(|p| p.file_name()).map(|f| f.to_string_lossy().to_string()),
         "has_height": has_height,
-        "height_filled_fraction": filled,
         "seconds": t0.elapsed().as_secs_f64(),
     });
+    // Only where heights were interpolated: a manifest with no such field filled nothing, as those baked before filling existed did.
+    if filled > 0.0 {
+        extra["height_filled_fraction"] = json!(filled);
+    }
     write_body_pack(options, &pages, extra.clone())?;
     // Deeper pages: one bundle per face and level (pack.rs), written as each face is done, so one
     // face of pages waits in memory at a time (about 220 MB at level 6 of the Moon).
@@ -392,7 +398,7 @@ fn write_body_pack(options: &BodyOptions, pages: &[BakedPage], extra: Value) -> 
     let mut manifest: Value =
         serde_json::from_str(&fs::read_to_string(&path).map_err(|e| e.to_string())?)
             .map_err(|e| e.to_string())?;
-    manifest["version"] = json!(format!("{}-v1", options.name));
+    manifest["version"] = json!(format!("{}-v{}", options.name, options.version));
     manifest["finest_level"] = json!(options.finest);
     fs::write(&path, serde_json::to_string_pretty(&manifest).unwrap()).map_err(|e| e.to_string())
 }

@@ -6,3 +6,4 @@
 /.vercel/
 *.log
 /web/pack
+/rebake-sources/

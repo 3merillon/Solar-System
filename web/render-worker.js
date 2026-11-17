@@ -1,6 +1,6 @@
 import init,{Explorer,SolarFlight} from './pkg/solar_explorer.js';
 import {installCompiler} from './gpu-startup.js';
-import {packSite} from './pack-base.js';
+import {packSite,packFolder,mapFile} from './pack-base.js';
 let engine,dead=false,tail=Promise.resolve();
 const progress=value=>postMessage({type:'progress',...value});
 const fatal=message=>{if(dead)return;dead=true;postMessage({type:'fatal',message:String(message)});};
@@ -32,7 +32,7 @@ let fieldPort=null,fieldStats=null;const fieldPages=[],fieldEvents=[];let fieldC
 const SOURCE_BIT={pack:1,terrarium:2,eox:4,swissimage:8,osm:16};
 // The solar system. The body in full detail changes with no reload: the field moves to its pack, and maps and stars stay.
 let fieldWorker=null,earthField=null,mapQueue=[],packBase='pack/';
-const fieldFor=name=>name.startsWith('exo-')||name==='procedural'?null:name==='earth'?earthField:{manifest:{baked:true,body:name},proxy:'',pack:`${packBase}${name}-v1/`};
+const fieldFor=name=>name.startsWith('exo-')||name==='procedural'?null:name==='earth'?earthField:{manifest:{baked:true,body:name},proxy:'',pack:packBase+packFolder(name)};
 // Maps and stars: fetched once, decoded here, entering the engine one per frame. A body without its map stays grey and says so in stats.
 // Bodies with no baked map (docs/SOLAR-SYSTEM.md: the Sun is drawn by the star model; Deimos, Mimas and Uranus's moons have none):
 // not asked for, so a session sends the pack host no request that can only fail. A map baked later must be taken off this list.
@@ -55,7 +55,7 @@ async function loadSpaceAssets(names){
   if(!solarPack)break;
   if(NO_BAKED_MAP.has(names[layer]))continue;
   try{
-   const r=await fetch(`${base}solar/maps/${names[layer]}.jpg`);if(!r.ok)continue;
+   const r=await fetch(base+mapFile(names[layer]));if(!r.ok)continue;
    const bitmap=await createImageBitmap(await r.blob(),{colorSpaceConversion:'none'});
    const canvas=new OffscreenCanvas(1024,512),c=canvas.getContext('2d',{willReadFrequently:true});c.drawImage(bitmap,0,0,1024,512);bitmap.close();
    mapQueue.push({layer,rgba:new Uint8Array(c.getImageData(0,0,1024,512).data.buffer)});

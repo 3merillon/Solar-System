@@ -163,7 +163,8 @@ clouds, and the solar system has no star background and no surface maps.
 Two ways to get them for a local build:
 
 - **Download them.** One command fetches the same packs the public site uses from this
-  repository's [`packs-v1` release](https://github.com/3merillon/Solar-System/releases/tag/packs-v1)
+  repository's releases ([`packs-v1`](https://github.com/3merillon/Solar-System/releases/tag/packs-v1), and
+  [`packs-v2`](https://github.com/3merillon/Solar-System/releases/tag/packs-v2) for the packs rebaked since)
   into `web/pack/` and checks every file against the hashes in `tools/packs.json`:
 
   ```powershell
@@ -172,19 +173,28 @@ Two ways to get them for a local build:
   ```
 
   After that the local server shows everything the public site does.
-- **Bake your own.** `crates/solar-bake` builds every pack from the public sources
-  (`cargo run --release -p solar-bake -- ...`; its commands and options are listed at the top
-  of `crates/solar-bake/src/main.rs`). [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) names
-  the products each pack was made from, and every pack's `manifest.json` records its own.
-  The options used for each body of the published bake (the height scale and offset of each
-  elevation product) are not recorded in this repository: read them from the product's
-  label. Put the output in `web/pack/`.
+- **Build them from the sources.** One command downloads the original public sources
+  (USGS, NOAA, NASA, JPL; 23 GB), builds `crates/solar-bake`, bakes every pack with the
+  options recorded in `tools/rebake.json` and checks the result against `tools/packs.json`:
+
+  ```powershell
+  node tools/Rebake-Packs.mjs --plan    # what it would download, and the disk it needs
+  node tools/Rebake-Packs.mjs           # into web/pack/; run it again to resume
+  ```
+
+  It reproduces the published packs byte for byte (measured on Windows), so both ways end
+  with the same files. The Moon, Mars and Mercury need about 32 GB of memory; `--only small`
+  leaves them out.
+  [docs/BAKING.md](docs/BAKING.md) has the cost, what matches and why, and how to add a body.
 
 A deployed site reads its packs from a host of your own, named when the site is built
 (next section). A pack host must answer over HTTPS with `Access-Control-Allow-Origin` and must honour byte
 ranges (`206 Partial Content`): the fine levels are one bundle file per cube face and level,
 and the app reads single pages out of them by range. A host that ignores ranges is refused,
-never read whole. `node tools/serve.mjs --cors` stands in for such a host locally.
+never read whole. `node tools/serve.mjs --cors` stands in for such a host locally. Upload
+the folders as `web/pack/` holds them. A pack that changes is published under a new folder
+(`<body>-v2/`, docs/BAKING.md, "Pack versions"), so add the new folders before deploying
+code that reads them, and keep the old ones while an older deployment may still read them.
 
 ### Deploy
 

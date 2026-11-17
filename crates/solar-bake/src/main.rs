@@ -4,8 +4,11 @@
 //!                  [--quality Q] [--420] [--threads N]
 //! solar-bake solar --kernels DIR --out FILE
 //! solar-bake body --name NAME --image PATH --out DIR --map FILE --credit TEXT
-//!                  [--height PATH] [--height-scale K] [--height-offset M] [--no-data V] [--height-no-data V]
+//!                  [--height PATH] [--height-scale K] [--height-offset M] [--no-data V|none] [--height-no-data V|none]
 //!                  [--decimate-image N] [--decimate-height N] [--finest L] [--image-is TEXT] [--threads N]
+//!                  [--version N]  (the pack's version, `NAME-vN` in its manifest; it goes up whenever the content changes)
+//!                  No-data is the file's own GDAL tag unless given; `none`: no value is no data (bakes before
+//!                  31 October 2026, 21:00, never read the tag).
 //! solar-bake bundle --dir DIR   (a body pack baked with loose page files: write its page bundles)
 //! solar-bake map --jpeg PATH --map FILE
 //! solar-bake sky --exr PATH --stars BSC5 --out FILE
@@ -139,17 +142,23 @@ fn run() -> Result<(), String> {
             let credit = arg(&args, "--credit").ok_or("--credit required")?;
             let image_is = arg(&args, "--image-is").unwrap_or_else(|| "visible light".into());
             let number = |name: &str| arg(&args, name).and_then(|s| s.parse::<f64>().ok());
+            // NaN matches no value, so the file's tag is not used either.
+            let no_data = |name: &str| match arg(&args, name).as_deref() {
+                Some("none") => Some(f64::NAN),
+                _ => number(name),
+            };
             body::bake(&body::BodyOptions {
                 name: &name,
                 image: &image,
                 height: height.as_deref(),
                 height_scale: number("--height-scale").unwrap_or(1.0),
                 height_offset: number("--height-offset").unwrap_or(0.0),
-                image_no_data: number("--no-data"),
-                height_no_data: number("--height-no-data"),
+                image_no_data: no_data("--no-data"),
+                height_no_data: no_data("--height-no-data"),
                 decimate_image: number("--decimate-image").unwrap_or(1.0) as usize,
                 decimate_height: number("--decimate-height").unwrap_or(1.0) as usize,
                 finest: number("--finest").unwrap_or(3.0) as u8,
+                version: number("--version").unwrap_or(1.0) as u32,
                 out: &out,
                 map_out: &map,
                 credit: &credit,

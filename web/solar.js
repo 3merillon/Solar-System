@@ -8,7 +8,7 @@ import init,{SolarFlight} from './pkg/solar_explorer.js';
 import {installPlanetIndicators,PLACES} from './planet-indicators.js';
 import {installLandmarks} from './landmarks.js';
 import {forGame} from './game-input.js';
-import {packSite} from './pack-base.js';
+import {packSite,packFolder} from './pack-base.js';
 import {approximatePlace} from './home-zone.js';
 // (As `image`: `world` below is the select element of the same name, which shadowed this and gave the packet no size.)
 import {world as image} from './quality.js';
@@ -42,7 +42,7 @@ async function describe(id){
  describing.set(id,NOT_MEASURED[id]??'');
  if(id>=10000){const s=GALAXY.find(s=>s.id===systemOf(id));let star='';try{const i=JSON.parse(SolarFlight.star_info(s.id));star=` ${i.spectral?i.spectral.value+', ':''}${Math.round(i.teff_used)} K (${i.teff_origin==='Catalogue'?i.teff.source:i.teff_origin==='SpectralClass'?'from its spectral class':'unknown: the Sun’s, as a fallback'}). Its colour and limb darkening follow from that temperature; its surface detail, when shown, is synthetic, and it has no corona model.`;}catch{}describing.set(id,s?(id===s.id?`${s.name}:${star} Distance (${s.distance} light-years) and direction are approximate catalogue values.`:`${nameOf(id)}: a synthetic world. Its surface, size and circular orbit are procedural game content, not observations; ${s.name} is ${s.distance} light-years from Sol.`):'');return describing.get(id);}
  if(NOT_MEASURED[id]||id===399)return describing.get(id);
- try{const m=await (await fetch(`${(await packSite()).base}${SolarFlight.body_name(id)}-v1/manifest.json`)).json();const b=m.bake||{};describing.set(id,`${nameOf(id)}: ${b.image_is}. ${b.has_height?'Heights measured.':'No global height data: all its relief is synthesized.'} Fine detail is synthesized. ${(m.attribution||[]).join(' ')}`);}catch{}
+ try{const m=await (await fetch(`${(await packSite()).base}${packFolder(SolarFlight.body_name(id))}manifest.json`)).json();const b=m.bake||{};describing.set(id,`${nameOf(id)}: ${b.image_is}. ${b.has_height?'Heights measured.':'No global height data: all its relief is synthesized.'} Fine detail is synthesized. ${(m.attribution||[]).join(' ')}`);}catch{}
  return describing.get(id);
 }
 // A text node per readout, rewritten only when its text changes.

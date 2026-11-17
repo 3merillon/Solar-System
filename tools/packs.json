@@ -3,29 +3,34 @@
  "repository": "https://github.com/3merillon/Solar-System",
  "files": [
   {
-   "path": "callisto-v1/level-0.bin",
-   "bytes": 74185,
-   "sha256": "6dc24f730326421854ae2e75729039d10a5a166800bff47e12ef44cd56c613ca"
+   "path": "callisto-v2/level-0.bin",
+   "bytes": 74004,
+   "sha256": "1c8d2121b7c53365f2b3c93b4bb4ce6018272558cd3dcf4cf9a636cd7b166c85",
+   "release": "packs-v2"
   },
   {
-   "path": "callisto-v1/level-1.bin",
-   "bytes": 305993,
-   "sha256": "f27b97be2f0c53eb141d48c195153f158f372aa3a2abeb2390d22df2e8c6fc6e"
+   "path": "callisto-v2/level-1.bin",
+   "bytes": 305514,
+   "sha256": "0bf06626c1edb75b290baeb3e42c7bdb38413355776ac43eed7786c5ee144eff",
+   "release": "packs-v2"
   },
   {
-   "path": "callisto-v1/level-2.bin",
-   "bytes": 1215222,
-   "sha256": "86a2ef8e39aae957ab3218739877d19bfb036292cd8ff4ae077f3f3f1d825a37"
+   "path": "callisto-v2/level-2.bin",
+   "bytes": 1214369,
+   "sha256": "a386465c4a058f757e46cabf15f06b41667e90db4474da02ed233a1cb94a2fa4",
+   "release": "packs-v2"
   },
   {
-   "path": "callisto-v1/level-3.bin",
-   "bytes": 4268213,
-   "sha256": "24ee8e421a439d7c44e5a974c7c9c2064b124888dde4dba65a23f9b2b648d8f1"
+   "path": "callisto-v2/level-3.bin",
+   "bytes": 4266304,
+   "sha256": "ce2aa3e6c53442ef392fdd12dc288ae50331c82ae5d476f5c6994dbb904f9966",
+   "release": "packs-v2"
   },
   {
-   "path": "callisto-v1/manifest.json",
-   "bytes": 1031,
-   "sha256": "f66d0786186d60a85fd24e19b619d6e62ae1ffbb9fdb5368f3ef3bd1476004e7"
+   "path": "callisto-v2/manifest.json",
+   "bytes": 1040,
+   "sha256": "c4929fd5eb8bf688589b46e9a21eba52deea160b85e07779cf1ce5981f2c6b83",
+   "release": "packs-v2"
   },
   {
    "path": "charon-v1/level-0.bin",
@@ -53,324 +58,388 @@
    "sha256": "2aab69ade86c1df8ee7c77c42e260003bc0a6c6dac8555ddf92700fcbb759c71"
   },
   {
-   "path": "dione-v1/level-0.bin",
-   "bytes": 161192,
-   "sha256": "1406a2fb9e666e8a374bd5ccb6574f5fa625f88cba141fa729b264b31a6b010c"
+   "path": "dione-v2/level-0.bin",
+   "bytes": 161081,
+   "sha256": "0c4139686502927733d1af78a3deaf4f24e5fc19225f5e7f7127aec41725340f",
+   "release": "packs-v2"
   },
   {
-   "path": "dione-v1/level-1.bin",
-   "bytes": 627845,
-   "sha256": "dd92198fc0d36a5516277c862b2155bf42a34870702c9631e0141cba41226312"
+   "path": "dione-v2/level-1.bin",
+   "bytes": 627240,
+   "sha256": "6355d9844a454d94353d66479489cfce9436bc0c950b401b2cf1536e16658eb0",
+   "release": "packs-v2"
   },
   {
-   "path": "dione-v1/level-2.bin",
-   "bytes": 2056993,
-   "sha256": "688e37021455514b1764d2c8c783a3118eb2f2d9ca668ee57b0e2f2b9eaa41a5"
+   "path": "dione-v2/level-2.bin",
+   "bytes": 2059292,
+   "sha256": "c6dce930826c75576d65e74fe70cd8470dc5caeb1c83cd42179eb0a0a0ab21fa",
+   "release": "packs-v2"
   },
   {
-   "path": "dione-v1/level-3.bin",
-   "bytes": 6058106,
-   "sha256": "7f64d18f055dbe308c0b1bf6af412be952d3bb135817a13ee3171db31d775eab"
+   "path": "dione-v2/level-3.bin",
+   "bytes": 6073687,
+   "sha256": "e23fad104ebca35709d632a19c60f7ff119901f4e8710767ef7b098f2ee5b7ae",
+   "release": "packs-v2"
   },
   {
-   "path": "dione-v1/manifest.json",
-   "bytes": 1022,
-   "sha256": "e205024d8fb2578c0f5fafb7f9ffc67e7336ff10cdaccda1a47456e27fee4c67"
+   "path": "dione-v2/manifest.json",
+   "bytes": 1021,
+   "sha256": "3f8d0cc01f9a3b258a70d2a5b824bafea379187ed41ea24fb3380e44e793cf9f",
+   "release": "packs-v2"
   },
   {
-   "path": "enceladus-v1/level-0.bin",
-   "bytes": 131284,
-   "sha256": "c29360f26cd4858159f2c893b340c5f687a99bb38a8464647caa5030387c5c58"
+   "path": "enceladus-v2/level-0.bin",
+   "bytes": 131198,
+   "sha256": "40e1832fc6946829f6ecdb4c34aa37dee42841ff37796267e4c80de0d46e428f",
+   "release": "packs-v2"
   },
   {
-   "path": "enceladus-v1/level-1.bin",
-   "bytes": 557155,
-   "sha256": "f474d08f65418ada1f5d34ce5374a767ba513e7639d2c38a94076978dd6b4d44"
+   "path": "enceladus-v2/level-1.bin",
+   "bytes": 557044,
+   "sha256": "19c374ab47dc330cb3fc31c73c16cc9217d409fea1f14589992c1e77942c7e31",
+   "release": "packs-v2"
   },
   {
-   "path": "enceladus-v1/level-2.bin",
-   "bytes": 1935038,
-   "sha256": "99eb36b8f01e31c4d861202f05bb125148ccf5aad19723d7a1170730509684fd"
+   "path": "enceladus-v2/level-2.bin",
+   "bytes": 1935905,
+   "sha256": "6115a481692b4f448c0904fd476254b03b2ed11c5d0cf9a84de6c3c8c1ef19ab",
+   "release": "packs-v2"
   },
   {
-   "path": "enceladus-v1/level-3.bin",
-   "bytes": 5831063,
-   "sha256": "eda64c87e8bcae3018a21a2b62b152d46d0a7b17e23a9556b595cfa50a4a6495"
+   "path": "enceladus-v2/level-3.bin",
+   "bytes": 5837296,
+   "sha256": "3425b2ad0bee89c7c42ec2f46a6adc3718ba66a3cd3d549ced206328b4b021c1",
+   "release": "packs-v2"
   },
   {
-   "path": "enceladus-v1/manifest.json",
+   "path": "enceladus-v2/manifest.json",
    "bytes": 1013,
-   "sha256": "9490fa649d7a828f4be795098de0d468b27b1e6ba8e211f0caad5a5ca9098d5e"
+   "sha256": "5a749345510842e6e91a7f40c12ec54210f8f397ca32e5a0bc138a7fe5d1723b",
+   "release": "packs-v2"
   },
   {
-   "path": "europa-v1/level-0.bin",
-   "bytes": 88595,
-   "sha256": "ca649f94f71eaf086e9d24219677738b1d6c94fa8ee09b0907afabe37dd386dc"
+   "path": "europa-v2/level-0.bin",
+   "bytes": 88433,
+   "sha256": "b4dea88d53ce73242b98185bfc1ed8d7c2a1e35aac1a51c5b3cfd0b8bc166963",
+   "release": "packs-v2"
   },
   {
-   "path": "europa-v1/level-1.bin",
-   "bytes": 373871,
-   "sha256": "108cb80bc07d1bc0bc21e96d85f02d90d8c7bfe239153fa569c522307249e2dd"
+   "path": "europa-v2/level-1.bin",
+   "bytes": 373535,
+   "sha256": "89a331e2f530d293ca5b33eac73d53700bd924a574ca2d902b31492009f89881",
+   "release": "packs-v2"
   },
   {
-   "path": "europa-v1/level-2.bin",
-   "bytes": 1421677,
-   "sha256": "7a4066476fcc5f15b4a401b855e6757718f7920ac3943bc17d472cf85c8a2dd1"
+   "path": "europa-v2/level-2.bin",
+   "bytes": 1421040,
+   "sha256": "8c36a7e4eccd3b51ebf8cc7feaf33fb0eaab2e28e4231521cf4462826064dd52",
+   "release": "packs-v2"
   },
   {
-   "path": "europa-v1/level-3.bin",
-   "bytes": 4771774,
-   "sha256": "ac85e31c3a1243c1be4cdc5a65a7becd214962862abef9d27282aa58bad785e1"
+   "path": "europa-v2/level-3.bin",
+   "bytes": 4770372,
+   "sha256": "8f777bc6e151c2869f707f7732ebf3cee02571b705e040e8f3e5b7fa1cbb9074",
+   "release": "packs-v2"
   },
   {
-   "path": "europa-v1/manifest.json",
+   "path": "europa-v2/manifest.json",
    "bytes": 1026,
-   "sha256": "d5ff4d1c44a8bb602e3df041f8a0c62d578c53501e1d17cfeb18057627439661"
+   "sha256": "366ff562470f3100a4361a5f9447e483c76c601b7dd188513a887c221df1eded",
+   "release": "packs-v2"
   },
   {
-   "path": "europa-v1/pages/4/face-0.bin",
+   "path": "europa-v2/pages/4/face-0.bin",
    "bytes": 2229904,
-   "sha256": "647343f8f3be52a3c252d685274b5c7d8200f5ea17004ac2556c6839e9ccfde3"
+   "sha256": "647343f8f3be52a3c252d685274b5c7d8200f5ea17004ac2556c6839e9ccfde3",
+   "release": "packs-v2"
   },
   {
-   "path": "europa-v1/pages/4/face-1.bin",
+   "path": "europa-v2/pages/4/face-1.bin",
    "bytes": 2653923,
-   "sha256": "64c72856d2c90b3bad76fd8208cf9ed72584b20a73faaa741eb2b2c6587eb531"
+   "sha256": "64c72856d2c90b3bad76fd8208cf9ed72584b20a73faaa741eb2b2c6587eb531",
+   "release": "packs-v2"
   },
   {
-   "path": "europa-v1/pages/4/face-2.bin",
-   "bytes": 2043991,
-   "sha256": "a0d9a87f9f4ce68f59db1e362aa49aa4d6b9045f09ff15537efdf0e884933b9c"
+   "path": "europa-v2/pages/4/face-2.bin",
+   "bytes": 2043755,
+   "sha256": "a0d2182b8d1fe2f8a8e5cc8280c7856b02136c8958d278eb60e630993ba700e4",
+   "release": "packs-v2"
   },
   {
-   "path": "europa-v1/pages/4/face-3.bin",
-   "bytes": 2335442,
-   "sha256": "569a918eda21a769644cd3f270dcb4ca50096a1fa45f4d2dd316878a12ff638b"
+   "path": "europa-v2/pages/4/face-3.bin",
+   "bytes": 2332564,
+   "sha256": "45a2f8aac1aa4a53645d8b0755f5b0399f11834e44ad471980810c0262cbfc87",
+   "release": "packs-v2"
   },
   {
-   "path": "europa-v1/pages/4/face-4.bin",
-   "bytes": 2938860,
-   "sha256": "a094e7614848f03ccf35c72a3c7a4be72617b9be994a346614dc87369933f35f"
+   "path": "europa-v2/pages/4/face-4.bin",
+   "bytes": 2938921,
+   "sha256": "5bcf1dd70f03057931d4311a5db71233a3c56f910c6ba36d24a0fb8fe371c1ac",
+   "release": "packs-v2"
   },
   {
-   "path": "europa-v1/pages/4/face-5.bin",
-   "bytes": 2269104,
-   "sha256": "47e98c567cfae0047bb7f9e0ab8b20a7495c246903071da8c2e64e1683765357"
+   "path": "europa-v2/pages/4/face-5.bin",
+   "bytes": 2268370,
+   "sha256": "4a070b3f4e15961c447a683eff65e7be630d7289e180237b5e61e7ccab38ea60",
+   "release": "packs-v2"
   },
   {
-   "path": "ganymede-v1/level-0.bin",
-   "bytes": 85992,
-   "sha256": "c576788edd36da5a74021e5fc82af7dc8e7a0c9d4145a46b9964af33b44874c3"
+   "path": "ganymede-v2/level-0.bin",
+   "bytes": 85786,
+   "sha256": "37956f9aebf0531f0c69e7f613708c5e5a033bb06ef2d39dfe3abb4808373907",
+   "release": "packs-v2"
   },
   {
-   "path": "ganymede-v1/level-1.bin",
-   "bytes": 333890,
-   "sha256": "a017bd82995cd938c85fcdb0b45bef40f118f71ef123c1b428d040958b6ea1ae"
+   "path": "ganymede-v2/level-1.bin",
+   "bytes": 333333,
+   "sha256": "f4e3fbd7c08955f87930ce0284e49f53af7d1d9d274c6ecddced2d84a83f0474",
+   "release": "packs-v2"
   },
   {
-   "path": "ganymede-v1/level-2.bin",
-   "bytes": 1334195,
-   "sha256": "5ec14f8575bc3ccba35f7b350148f59dfc50842c50c630b13f2168d3a2fc51ae"
+   "path": "ganymede-v2/level-2.bin",
+   "bytes": 1333058,
+   "sha256": "7b646cc0c5523b2e162490ae592ca87cd717c13a4e96efe453ed77114dca34e0",
+   "release": "packs-v2"
   },
   {
-   "path": "ganymede-v1/level-3.bin",
-   "bytes": 5014546,
-   "sha256": "97dde72970eef4978d2cebeafe6c5cd95a9973f34a70b192456500010f003781"
+   "path": "ganymede-v2/level-3.bin",
+   "bytes": 5011323,
+   "sha256": "f7b92855e8149d38881002301506a212dbb44ee0be1ccdbdba9a8d337272c2a8",
+   "release": "packs-v2"
   },
   {
-   "path": "ganymede-v1/manifest.json",
+   "path": "ganymede-v2/manifest.json",
    "bytes": 1026,
-   "sha256": "2b3bf8003336a6e88108e08b97eb4a5763ec0ac68d894e8516ec9ce3ed9a181f"
+   "sha256": "7207cd9d5d2eb9a0a590544a5fc7a12668bd57258f65b7a9ee311b401433e8ff",
+   "release": "packs-v2"
   },
   {
-   "path": "iapetus-v1/level-0.bin",
-   "bytes": 136140,
-   "sha256": "e3158d8ae570d7250e09088e0b2d26672f619ed24ac0935d86acc3801d91d52e"
+   "path": "iapetus-v2/level-0.bin",
+   "bytes": 136114,
+   "sha256": "16b404671c3a355caeb7bc4ad655ebce892a7609beef988896413f96b5d92dd9",
+   "release": "packs-v2"
   },
   {
-   "path": "iapetus-v1/level-1.bin",
-   "bytes": 492242,
-   "sha256": "9cd3c448645bb61391cd67cce8d338c53f85259d74e8f55ee35fc423b0411f9c"
+   "path": "iapetus-v2/level-1.bin",
+   "bytes": 492226,
+   "sha256": "e66382c006128305d2d7d7a41abff64f7349434ad6ac623f45ad48be5f4f976d",
+   "release": "packs-v2"
   },
   {
-   "path": "iapetus-v1/level-2.bin",
-   "bytes": 1504200,
-   "sha256": "8fae2df07a10ab097f37d82c50495c7a0c9cc00507e37bb0a005fead4bc862fd"
+   "path": "iapetus-v2/level-2.bin",
+   "bytes": 1504338,
+   "sha256": "217953380df3067e102046e98ae6860e081722ea98c4d7291d69885fdc71d759",
+   "release": "packs-v2"
   },
   {
-   "path": "iapetus-v1/level-3.bin",
-   "bytes": 4146244,
-   "sha256": "51f2b8f911b55c9f6ca67359c74a57ce68ccdeac41717fd8622c9f596d9c71f9"
+   "path": "iapetus-v2/level-3.bin",
+   "bytes": 4146624,
+   "sha256": "3a9eb35dc075366a3a1f2382bf14e3fdc877132473d83406984a70d1e65f5bcb",
+   "release": "packs-v2"
   },
   {
-   "path": "iapetus-v1/manifest.json",
-   "bytes": 1026,
-   "sha256": "446f1e0843b262f3d0e36d160bcce557858cde5488b028c7ee8cf83aa4322f45"
+   "path": "iapetus-v2/manifest.json",
+   "bytes": 1027,
+   "sha256": "6719d4a8dd6308e6ff0e6ea2555aedb7d2c282dd79587590544da57e32ecd34c",
+   "release": "packs-v2"
   },
   {
-   "path": "io-v1/level-0.bin",
-   "bytes": 100523,
-   "sha256": "cf5c3dd49ac505db2eb7d8c44eaba3ce04db5005a28ebbb36c765ac7386f2a74"
+   "path": "io-v2/level-0.bin",
+   "bytes": 100524,
+   "sha256": "2f29734586321ac497b5ac0b5a9bd5ecaafbbd6b845f4c18ed97c532c0b2145c",
+   "release": "packs-v2"
   },
   {
-   "path": "io-v1/level-1.bin",
-   "bytes": 328411,
-   "sha256": "d1dcd52f459693ecad7fa6e9770d2186cac9477116ad51c44017076cfb916e74"
+   "path": "io-v2/level-1.bin",
+   "bytes": 328402,
+   "sha256": "2fcdd921d23b13082558407abe0e9b45d95b0578e7342f8001327446a2c90d35",
+   "release": "packs-v2"
   },
   {
-   "path": "io-v1/level-2.bin",
-   "bytes": 1052494,
-   "sha256": "edf455e34f02b3bdd8f0d0c33b5630ca35d55a2364b907a1f0334253e5cee8c4"
+   "path": "io-v2/level-2.bin",
+   "bytes": 1052455,
+   "sha256": "ee80c6e9f84fc21d273e616c3dcd0f75f2b880dfdc8db4286040badd2d74ff03",
+   "release": "packs-v2"
   },
   {
-   "path": "io-v1/level-3.bin",
-   "bytes": 3273014,
-   "sha256": "8b8bc174a811781c10570672e1de756e621e2f696097f239142a5e084c80eeb5"
+   "path": "io-v2/level-3.bin",
+   "bytes": 3272910,
+   "sha256": "167cda004d5de8de70078ec2258d64ea0482cf64748295b6f346cfa93dc09e45",
+   "release": "packs-v2"
   },
   {
-   "path": "io-v1/manifest.json",
-   "bytes": 1011,
-   "sha256": "0f07a965e5e7e5471703d2be7bb0e3b1b7b4caadc183db5092a7f1470ad1df03"
+   "path": "io-v2/manifest.json",
+   "bytes": 1010,
+   "sha256": "0210debdfc626ce88294fb31b7b82ac15da2c99a51e59bfd5ad3f8fb8a9912aa",
+   "release": "packs-v2"
   },
   {
-   "path": "mars-v1/level-0.bin",
-   "bytes": 437721,
-   "sha256": "ade96ec3d179ddfb44dd5cb9e13a51296c435177c7cafc68765a080261d655d3"
+   "path": "mars-v2/level-0.bin",
+   "bytes": 437714,
+   "sha256": "5ffc83758ae746157f0570d4c5f74e7137868992eb61e73f1abf90a2f8f1b917",
+   "release": "packs-v2"
   },
   {
-   "path": "mars-v1/level-1.bin",
-   "bytes": 1575350,
-   "sha256": "dda4d95f0f0ca410b440572d233ba6000ea1694afa0dac45a69823ca566caee5"
+   "path": "mars-v2/level-1.bin",
+   "bytes": 1575296,
+   "sha256": "62a163c3968d8a5000b72e95251439b084107859f62d2fef28cbeb1564d02280",
+   "release": "packs-v2"
   },
   {
-   "path": "mars-v1/level-2.bin",
-   "bytes": 5913166,
-   "sha256": "333266571e3a8f20e15a620008068db03b0381d16567c0b5cec5ccd221dab922"
+   "path": "mars-v2/level-2.bin",
+   "bytes": 5912696,
+   "sha256": "06d0bdd80395163d4b84fccb0f4506218f0170c23247f5a8ed8a1a273b8a9e7a",
+   "release": "packs-v2"
   },
   {
-   "path": "mars-v1/level-3.bin",
-   "bytes": 22838599,
-   "sha256": "99f36025c1c9289ed7c3bb65f1cfb294b5b6815361ce7addcf6d8182f508b592"
+   "path": "mars-v2/level-3.bin",
+   "bytes": 22836697,
+   "sha256": "79020303ce096c52ed46e36116454ee5b003851f2b71e0bc110579bfe6ef470a",
+   "release": "packs-v2"
   },
   {
-   "path": "mars-v1/manifest.json",
-   "bytes": 1028,
-   "sha256": "69723346d5930330f9756afea30c773fb852d14b97f4ee355fcc143bb848a5ec"
+   "path": "mars-v2/manifest.json",
+   "bytes": 1030,
+   "sha256": "04a3b2a776bfe0fd5942cec9a22e56ebea90f4e42f70bebaa4027372a951cf96",
+   "release": "packs-v2"
   },
   {
-   "path": "mars-v1/pages/4/face-0.bin",
+   "path": "mars-v2/pages/4/face-0.bin",
    "bytes": 14773437,
-   "sha256": "4a166c3c09812392d8772f7469cf92d0dc63246d805ce43eb3ef914e70d04bfd"
+   "sha256": "4a166c3c09812392d8772f7469cf92d0dc63246d805ce43eb3ef914e70d04bfd",
+   "release": "packs-v2"
   },
   {
-   "path": "mars-v1/pages/4/face-1.bin",
+   "path": "mars-v2/pages/4/face-1.bin",
    "bytes": 13848391,
-   "sha256": "c7a78d5d7cfebea5ab8cc9246b13863ed17577e1b0e99f1c78328ea662d78ab1"
+   "sha256": "c7a78d5d7cfebea5ab8cc9246b13863ed17577e1b0e99f1c78328ea662d78ab1",
+   "release": "packs-v2"
   },
   {
-   "path": "mars-v1/pages/4/face-2.bin",
-   "bytes": 14722157,
-   "sha256": "68abec977df9793f7fda0fefb4eeca1988e1477d56a26f5ef7e903c4a33b927f"
+   "path": "mars-v2/pages/4/face-2.bin",
+   "bytes": 14720784,
+   "sha256": "0f188ed924728771979508f7ce0c1263ba7dbbf080c5b1c8a79ce3baafa59cb0",
+   "release": "packs-v2"
   },
   {
-   "path": "mars-v1/pages/4/face-3.bin",
-   "bytes": 14590876,
-   "sha256": "8d07e1e0bbf2eb9ffe06ced95186eef2c3e4bd466e408f7d42ce9e322000dabb"
+   "path": "mars-v2/pages/4/face-3.bin",
+   "bytes": 14590457,
+   "sha256": "5c4f49192328b27b89cf700d787487a2f3edd2693ba7f0d067e7bb253b2bc903",
+   "release": "packs-v2"
   },
   {
-   "path": "mars-v1/pages/4/face-4.bin",
+   "path": "mars-v2/pages/4/face-4.bin",
    "bytes": 14931090,
-   "sha256": "a4fc90bcde081e238bfac2179284ce128903aedadec31fe0d3c9fa97a44ce1d4"
+   "sha256": "a4fc90bcde081e238bfac2179284ce128903aedadec31fe0d3c9fa97a44ce1d4",
+   "release": "packs-v2"
   },
   {
-   "path": "mars-v1/pages/4/face-5.bin",
-   "bytes": 13880494,
-   "sha256": "bc5a7d676849369626e1cd806620c09bcfce72637c2cbd3258f29644c135cb7b"
+   "path": "mars-v2/pages/4/face-5.bin",
+   "bytes": 13878690,
+   "sha256": "26db376ae32e948189f974a099b9e5fb7319ca2cbb5c0ffa0b575303bb438844",
+   "release": "packs-v2"
   },
   {
-   "path": "mars-v1/pages/5/face-0.bin",
+   "path": "mars-v2/pages/5/face-0.bin",
    "bytes": 53224248,
-   "sha256": "ab77c489f34c31f2121c1aa58a0ef8ac7ea47a0b70e0bb977fff8f95675cc1e8"
+   "sha256": "ab77c489f34c31f2121c1aa58a0ef8ac7ea47a0b70e0bb977fff8f95675cc1e8",
+   "release": "packs-v2"
   },
   {
-   "path": "mars-v1/pages/5/face-1.bin",
+   "path": "mars-v2/pages/5/face-1.bin",
    "bytes": 50297516,
-   "sha256": "9b9783f558ac8a38efe52e38209d142eb9037c8d40911bacae7a57f71a99230d"
+   "sha256": "9b9783f558ac8a38efe52e38209d142eb9037c8d40911bacae7a57f71a99230d",
+   "release": "packs-v2"
   },
   {
-   "path": "mars-v1/pages/5/face-2.bin",
-   "bytes": 50134568,
-   "sha256": "c25b43bab4094df639d7ce3cca029c0438702c116e5c6f96a035bab38f53846c"
+   "path": "mars-v2/pages/5/face-2.bin",
+   "bytes": 50131814,
+   "sha256": "0610d91f1fbd16701bdc5b4fbbdfe0664365e4630b765a3e0a99c7720b2d418d",
+   "release": "packs-v2"
   },
   {
-   "path": "mars-v1/pages/5/face-3.bin",
-   "bytes": 53817326,
-   "sha256": "373c70aabe95763bcce3486f550b6c51872826119a536e3608f64fd059aaf88b"
+   "path": "mars-v2/pages/5/face-3.bin",
+   "bytes": 53817622,
+   "sha256": "f7abed055d4975632568bc68a8be96753d358414b6cc613918b731f3ddc7ab70",
+   "release": "packs-v2"
   },
   {
-   "path": "mars-v1/pages/5/face-4.bin",
+   "path": "mars-v2/pages/5/face-4.bin",
    "bytes": 53912407,
-   "sha256": "8fdce423be0cc67b42823753db452dc02a734966311be7090c82ea367d72c150"
+   "sha256": "8fdce423be0cc67b42823753db452dc02a734966311be7090c82ea367d72c150",
+   "release": "packs-v2"
   },
   {
-   "path": "mars-v1/pages/5/face-5.bin",
-   "bytes": 49826460,
-   "sha256": "332f1f7eab216da9126fa6774c9fcb8c8a5654824e24ad5c8f05f1364751ec6e"
+   "path": "mars-v2/pages/5/face-5.bin",
+   "bytes": 49824395,
+   "sha256": "89c83f5f5410f407d51f5328f571d226c78a721ad0e3fe43935ce19cd2277eee",
+   "release": "packs-v2"
   },
   {
-   "path": "mercury-v1/level-0.bin",
-   "bytes": 590385,
-   "sha256": "34ae358c79153ca061ce2e026c82917dc45eed6d4bfd11ca3bdc6972745ced8d"
+   "path": "mercury-v2/level-0.bin",
+   "bytes": 517586,
+   "sha256": "e9fed40e2499510e344e713d82e954ec7505f3978b7b340aad221118fc41cde0",
+   "release": "packs-v2"
   },
   {
-   "path": "mercury-v1/level-1.bin",
-   "bytes": 2140357,
-   "sha256": "1f1ee07c5f753ab7ffcf1bb33c6b9c85b80509db49b27bd339c8aec0b76e9b2e"
+   "path": "mercury-v2/level-1.bin",
+   "bytes": 1844042,
+   "sha256": "a2f3e0d49a4e957caf5c0bdb58640c803ce59af3b4fd12475b546426696919c1",
+   "release": "packs-v2"
   },
   {
-   "path": "mercury-v1/level-2.bin",
-   "bytes": 7402179,
-   "sha256": "8fe7aae06ed6bd671ee916ddebd75e09376d39d55b07c3b4f5ea85bd0a1267c2"
+   "path": "mercury-v2/level-2.bin",
+   "bytes": 6638956,
+   "sha256": "6ce8ea3502c6b75a6d3eccc6607d5877bd34e56647e28c295af6e40b73e1c552",
+   "release": "packs-v2"
   },
   {
-   "path": "mercury-v1/level-3.bin",
-   "bytes": 25412210,
-   "sha256": "149da46dcb7cd4d27152c5247e6f044c9b0a8be0f366b4003effa448cf27dda8"
+   "path": "mercury-v2/level-3.bin",
+   "bytes": 25398874,
+   "sha256": "edf56ea8079289a7207c12a09cbd74da59edbd7c0af8a2d5ab8f5aee1dbc8d2b",
+   "release": "packs-v2"
   },
   {
-   "path": "mercury-v1/manifest.json",
+   "path": "mercury-v2/manifest.json",
    "bytes": 1074,
-   "sha256": "e2b7eefe2774d3ddcfa9b8575cee9b67e538d60d78560e9287fddbbb3f3b004b"
+   "sha256": "86f0e9b8fa517b5721425fea6eb2bf80a43e228c3d7c5e597974d0e78ffdec7e",
+   "release": "packs-v2"
   },
   {
-   "path": "mercury-v1/pages/4/face-0.bin",
+   "path": "mercury-v2/pages/4/face-0.bin",
    "bytes": 14730544,
-   "sha256": "06195963eb2c3c1665158f182431042d544f0fdce186cfac1f03e0840a117128"
+   "sha256": "bc56f27014a57bdbe26302a67e65c1ebb22d424aad2ad43e2b2d3d84eeef82e6",
+   "release": "packs-v2"
   },
   {
-   "path": "mercury-v1/pages/4/face-1.bin",
+   "path": "mercury-v2/pages/4/face-1.bin",
    "bytes": 14792231,
-   "sha256": "f9afa40953663ea321a9c3f7704b41410c123ed3bc02700cfaa25aab89dba5de"
+   "sha256": "8588effba35b465fa665397724906070be6536f5a69351a7392ac73b035e427c",
+   "release": "packs-v2"
   },
   {
-   "path": "mercury-v1/pages/4/face-2.bin",
+   "path": "mercury-v2/pages/4/face-2.bin",
    "bytes": 16970631,
-   "sha256": "825053f389f6986eb618fd3e577ac1a9762cac02d423bb20bad5f8fe41d02e1a"
+   "sha256": "df6bf8c33a560c1db1460f7d5eb9a8222f42b25128393b0864cf369cb12a99e2",
+   "release": "packs-v2"
   },
   {
-   "path": "mercury-v1/pages/4/face-3.bin",
+   "path": "mercury-v2/pages/4/face-3.bin",
    "bytes": 15186861,
-   "sha256": "7874b582377e0cefc043a04c2f1bb5590a84076fb332f77b6dc55dfba982efd1"
+   "sha256": "7d0b31a43f4370542b106575670beaf272ca28d1d5d709d614a8744de12c4e57",
+   "release": "packs-v2"
   },
   {
-   "path": "mercury-v1/pages/4/face-4.bin",
+   "path": "mercury-v2/pages/4/face-4.bin",
    "bytes": 16219157,
-   "sha256": "2426e7180d99f4a4edaf08355185b25d549560c5372f349676ab1dada88943a2"
+   "sha256": "cea587fba0b614822ed0818af911edb54faa7ca10f6d16708f37c928ced8756c",
+   "release": "packs-v2"
   },
   {
-   "path": "mercury-v1/pages/4/face-5.bin",
+   "path": "mercury-v2/pages/4/face-5.bin",
    "bytes": 15540473,
-   "sha256": "1a535fef2fe249cad543097d59ce28c10bb9f3bd14a81d96a2042f8eab89a9b0"
+   "sha256": "95aafbe41d6a421f1b436275a5e1bc757314ce53ba5bbe690e63365432c1a9a9",
+   "release": "packs-v2"
   },
   {
    "path": "moon-v1/level-0.bin",
@@ -513,29 +582,34 @@
    "sha256": "bdf3e096ebee31b2980472331dae1272cc905c05907f579838393a1d4e14090e"
   },
   {
-   "path": "phobos-v1/level-0.bin",
-   "bytes": 72422,
-   "sha256": "4991f004a3131be74ce4198c559ad0b6e18a23898cba18df1e13c10bce45adc9"
+   "path": "phobos-v2/level-0.bin",
+   "bytes": 72394,
+   "sha256": "d7df86e6edcbfd58d31ef033cef42c5870b3e95e506242db9912e9e452b248bc",
+   "release": "packs-v2"
   },
   {
-   "path": "phobos-v1/level-1.bin",
-   "bytes": 235682,
-   "sha256": "bb6323843f217a3224008d5dbc9152869478ae0ec99d7ad395d3100a5ad87526"
+   "path": "phobos-v2/level-1.bin",
+   "bytes": 235435,
+   "sha256": "6157b4748b8f027d75db6164cba88e67a1d694ffa26d981baa65e4c69dcca11a",
+   "release": "packs-v2"
   },
   {
-   "path": "phobos-v1/level-2.bin",
-   "bytes": 770222,
-   "sha256": "ee9fa3a85652777b8951c6c8e665ed4553ab987c3da5d62906a21b0e084e32a5"
+   "path": "phobos-v2/level-2.bin",
+   "bytes": 769800,
+   "sha256": "1521d92e5ca14b6d69de38802cc2466e3c72d7cd1595461c6ec25d0887587619",
+   "release": "packs-v2"
   },
   {
-   "path": "phobos-v1/level-3.bin",
-   "bytes": 2432096,
-   "sha256": "3cf8868cb2b84042d3b8775c6340b7490e7ed9e11aa23be325efd22c3a94c6f6"
+   "path": "phobos-v2/level-3.bin",
+   "bytes": 2431663,
+   "sha256": "a0fff03f6152f20622325e2379b86ede779d2b3617136d438dc84ce7d7e0b8fa",
+   "release": "packs-v2"
   },
   {
-   "path": "phobos-v1/manifest.json",
+   "path": "phobos-v2/manifest.json",
    "bytes": 1026,
-   "sha256": "1e26ec509cd3fe259ba9c128367d7f715dbfdcdef5e9fe4bb67841222c005794"
+   "sha256": "42d8e9a9e40b4a8667b38ec662977289f047afd1b302e195dcadc8a73e30afd2",
+   "release": "packs-v2"
   },
   {
    "path": "pluto-v1/level-0.bin",
@@ -563,29 +637,34 @@
    "sha256": "659a4928bd770e01147918d3784cd301962bf2a84bb8513f9ec0c7b6f6934cbc"
   },
   {
-   "path": "rhea-v1/level-0.bin",
-   "bytes": 101747,
-   "sha256": "85e136c07658402f86579cfa6b20ae4f355b8fea74b21d56831c8840b06837b4"
+   "path": "rhea-v2/level-0.bin",
+   "bytes": 101732,
+   "sha256": "4907419f2e9d4390ca1f97edb5b4a13cc0fbbc16467457238ac4287b25ffab0c",
+   "release": "packs-v2"
   },
   {
-   "path": "rhea-v1/level-1.bin",
-   "bytes": 394822,
-   "sha256": "cb5adfc844dc02f62363099b6153948ed224223a48e03071a6656902e5c08646"
+   "path": "rhea-v2/level-1.bin",
+   "bytes": 394778,
+   "sha256": "64bbf51f6135a4629f42d3d4472668914fa1c42eb6b798de43bd42539a366b34",
+   "release": "packs-v2"
   },
   {
-   "path": "rhea-v1/level-2.bin",
-   "bytes": 1307997,
-   "sha256": "b82964aeb0f34037adcae23bdeee34f97144bb08bc738926c10658a58dceb910"
+   "path": "rhea-v2/level-2.bin",
+   "bytes": 1308170,
+   "sha256": "42cd7017205e8edaace9304b78d0f1c4b9888c95b3de48408fe62efbf095c8ad",
+   "release": "packs-v2"
   },
   {
-   "path": "rhea-v1/level-3.bin",
-   "bytes": 3816862,
-   "sha256": "45e40c15306f72f6ffca2fb15ac3ea90ff144bddf435d3ecb6183e2a123e92f5"
+   "path": "rhea-v2/level-3.bin",
+   "bytes": 3817532,
+   "sha256": "f751c2aae447c6a453ffaa46fd29fc0d438e2b4228cf4d4329b38e0f7dbc1bd1",
+   "release": "packs-v2"
   },
   {
-   "path": "rhea-v1/manifest.json",
+   "path": "rhea-v2/manifest.json",
    "bytes": 1018,
-   "sha256": "1d1af82c2668b10e368ec4f57ebffc1dfba7b42a391473e805264e232b7d4cb9"
+   "sha256": "55aeef842ad4b0f57cdb7e0a3cbee3e0ef72d7b1b1c3f80efc942a556a7e8c7d",
+   "release": "packs-v2"
   },
   {
    "path": "solar/asteroids.bin",
@@ -593,9 +672,10 @@
    "sha256": "3232257591459ddad7b794a4638c05df340be993809e63d8dd3039581b158636"
   },
   {
-   "path": "solar/maps/callisto.jpg",
-   "bytes": 128793,
-   "sha256": "39c21886fc9af769aeb6d233e89c63f92a9e435fc30d71a6d27b43fb26d3b1f8"
+   "path": "solar/maps/callisto-v2.jpg",
+   "bytes": 127742,
+   "sha256": "c06bc442e2e02a1759444d086a0b8b6b2af159949c17cff47c4d41a8b88b48ce",
+   "release": "packs-v2"
   },
   {
    "path": "solar/maps/charon.jpg",
@@ -603,9 +683,10 @@
    "sha256": "dc6695d0e325482559c732be6349277a6995cafeeddc494885c0bf22e1a68b5e"
   },
   {
-   "path": "solar/maps/dione.jpg",
-   "bytes": 249098,
-   "sha256": "cdf6bac6b99e38858bc7b3efed6609512129696f0bc6aa491df83f2d52aca9a9"
+   "path": "solar/maps/dione-v2.jpg",
+   "bytes": 248773,
+   "sha256": "917f468d96bff48514538752e93fe9a75271df8750b09f19b6a8ed7736478e21",
+   "release": "packs-v2"
   },
   {
    "path": "solar/maps/earth.jpg",
@@ -613,29 +694,34 @@
    "sha256": "dc96e204ccae706a3094b346176bbf07cd0684e6364eec8a72a34d9393c59144"
   },
   {
-   "path": "solar/maps/enceladus.jpg",
-   "bytes": 220384,
-   "sha256": "897977725fe8b48954062a57bfb80507705a041c0ee527d6aaf704591ead79cf"
+   "path": "solar/maps/enceladus-v2.jpg",
+   "bytes": 220273,
+   "sha256": "eb7f5ee4cb1c321830ed7a736ce95258ede69a3bc556d72d147640b12404ce86",
+   "release": "packs-v2"
   },
   {
-   "path": "solar/maps/europa.jpg",
-   "bytes": 152749,
-   "sha256": "c6a49c9b104e629a7e6c6a863972bddde14ad07f570c3626a132426a9cf70ae3"
+   "path": "solar/maps/europa-v2.jpg",
+   "bytes": 152251,
+   "sha256": "630171d54a7bb574c9413559730dd71943d6ace56814788417ddb0debc858504",
+   "release": "packs-v2"
   },
   {
-   "path": "solar/maps/ganymede.jpg",
-   "bytes": 143094,
-   "sha256": "df2dcb6fd8c71079f31bf4dbd879298d09666eba559253474b08210d66b5dd13"
+   "path": "solar/maps/ganymede-v2.jpg",
+   "bytes": 142016,
+   "sha256": "592817c030bc5792bc47300cce021e44f7269a382c1d6b0619e8948825f4765b",
+   "release": "packs-v2"
   },
   {
-   "path": "solar/maps/iapetus.jpg",
-   "bytes": 208206,
-   "sha256": "df654fc3fd10b4b31f9d98e5c6c68305f6e8ff06d25f0c1f0f6cc6caa365f301"
+   "path": "solar/maps/iapetus-v2.jpg",
+   "bytes": 208207,
+   "sha256": "11cc93eb11d7a9557e533dc6b11eb0cebfeafbad2b1faff7795207c2fcadd763",
+   "release": "packs-v2"
   },
   {
-   "path": "solar/maps/io.jpg",
-   "bytes": 150674,
-   "sha256": "205c0400a422616427186675af5f6e23da45d9d9559ca28b352e9a8120f359dc"
+   "path": "solar/maps/io-v2.jpg",
+   "bytes": 150622,
+   "sha256": "a8ce5212068cb679d2564518cdf24c07a63fe3b2286be3f1ed06c58a4cde7597",
+   "release": "packs-v2"
   },
   {
    "path": "solar/maps/jupiter.jpg",
@@ -643,14 +729,16 @@
    "sha256": "ec16493d8b2cfbdfdc529d5494ff4fea45afd455f697b4276d989e064f74d6ba"
   },
   {
-   "path": "solar/maps/mars.jpg",
-   "bytes": 131837,
-   "sha256": "d7a1adbe108fd3e1846b1ee01de156667dd07eda2a6defd4e0d6439e2ce5417a"
+   "path": "solar/maps/mars-v2.jpg",
+   "bytes": 131797,
+   "sha256": "f7861e73b4da83cf044c64ea11e8865a5238b376bd1190ec875bfccaf9bf00aa",
+   "release": "packs-v2"
   },
   {
-   "path": "solar/maps/mercury.jpg",
+   "path": "solar/maps/mercury-v2.jpg",
    "bytes": 177283,
-   "sha256": "46f04bad63f51600592339fb1f679bb117cf7036a1bd1b87c98e96129b74ea7e"
+   "sha256": "46f04bad63f51600592339fb1f679bb117cf7036a1bd1b87c98e96129b74ea7e",
+   "release": "packs-v2"
   },
   {
    "path": "solar/maps/moon.jpg",
@@ -663,9 +751,10 @@
    "sha256": "71d5d43318a533905af5aa871c79481635cb53c7e9ee95f3880d50df7ee8522b"
   },
   {
-   "path": "solar/maps/phobos.jpg",
-   "bytes": 108690,
-   "sha256": "a708e77ec2850f2501aa9c767695ee43b992721c3a8282af6668c97b8d9032f3"
+   "path": "solar/maps/phobos-v2.jpg",
+   "bytes": 108189,
+   "sha256": "fb6061ca3597aa8835d8f2cff0cb2ff764c6bf18564ceaf5e5f64f4ae09ea824",
+   "release": "packs-v2"
   },
   {
    "path": "solar/maps/pluto.jpg",
@@ -673,9 +762,10 @@
    "sha256": "c993d83fbea932753b9eccfc11f8e767f553b1fef71f9932fed87093286922bc"
   },
   {
-   "path": "solar/maps/rhea.jpg",
-   "bytes": 174234,
-   "sha256": "7c453338629a10ed1a2e3980842acbd8c3bd43f921dcf95424580d13585a1cf8"
+   "path": "solar/maps/rhea-v2.jpg",
+   "bytes": 174291,
+   "sha256": "b631432c0dec9954d7b3c7d51ef1788515a9834aafbc96429e3c1d8908282c00",
+   "release": "packs-v2"
   },
   {
    "path": "solar/maps/saturn.jpg",
@@ -683,19 +773,22 @@
    "sha256": "f4ecb51f0a43ae12c2502ea6a007f4d312bac9f636f0bc23e7a1377cca8c99e0"
   },
   {
-   "path": "solar/maps/tethys.jpg",
-   "bytes": 235292,
-   "sha256": "5e8e4406f1de6f7457abb006dae357a91e81432bf4bba8c0a8463053b7de5704"
+   "path": "solar/maps/tethys-v2.jpg",
+   "bytes": 235214,
+   "sha256": "c748bab08cd72444d3f66e2f6342ba67a2c2bddb77924d27f9d17931bad35a08",
+   "release": "packs-v2"
   },
   {
-   "path": "solar/maps/titan.jpg",
-   "bytes": 120454,
-   "sha256": "1ecfa10adf61ba8ce05806a73816355e111bb91fc86a810d9d5ed0dce5833f81"
+   "path": "solar/maps/titan-v2.jpg",
+   "bytes": 120523,
+   "sha256": "00e69ab4b4401c1cc97107f4b97b08f186bafad40b127ae91e0650f10faa493e",
+   "release": "packs-v2"
   },
   {
-   "path": "solar/maps/triton.jpg",
-   "bytes": 97155,
-   "sha256": "362a7958a44c1ddea9ead528574b7183cefe1be0ce8941cd1c7b52846ae0ee42"
+   "path": "solar/maps/triton-v2.jpg",
+   "bytes": 95766,
+   "sha256": "bb1b99a39f545c286e34746d9075d156df1959acf71943988aacda4670506e69",
+   "release": "packs-v2"
   },
   {
    "path": "solar/maps/uranus.jpg",
@@ -748,79 +841,94 @@
    "sha256": "7f01909d6cc02679b67c42085c14af6f1c0e2c7b96b3cea1870de89293b5964a"
   },
   {
-   "path": "tethys-v1/level-0.bin",
-   "bytes": 149941,
-   "sha256": "a20795eda215cbffbcd28cc1b7ae6c08f2a871e952b6482dbd30c91575a47ed7"
+   "path": "tethys-v2/level-0.bin",
+   "bytes": 149868,
+   "sha256": "5e0c214e86657f7f4a4b36921f8cf6607d6786573b866e643b243c8f00a61fd9",
+   "release": "packs-v2"
   },
   {
-   "path": "tethys-v1/level-1.bin",
-   "bytes": 559269,
-   "sha256": "1867212aed124a30e3be1fd42160dae61c5deef0d8cde5d4a81c63903cacc1e6"
+   "path": "tethys-v2/level-1.bin",
+   "bytes": 559070,
+   "sha256": "cca88546929b47ad35d49a97927928b9867416f760bce1aff36d971ded227391",
+   "release": "packs-v2"
   },
   {
-   "path": "tethys-v1/level-2.bin",
-   "bytes": 1763272,
-   "sha256": "5fbae6d90550d4983d7e32d9ff969b623e544a94e370cfad9da3e5fde599c877"
+   "path": "tethys-v2/level-2.bin",
+   "bytes": 1764192,
+   "sha256": "43a6c9228834e596aaa8336046ca9e1284e1a0efa03c8e50e2180f1a80eda93c",
+   "release": "packs-v2"
   },
   {
-   "path": "tethys-v1/level-3.bin",
-   "bytes": 5137908,
-   "sha256": "78b04b401ea064b0d380025d056306142f56ae96faca52db58115d0bca01df73"
+   "path": "tethys-v2/level-3.bin",
+   "bytes": 5144994,
+   "sha256": "c8ea2ccc39a3626fe42b5e48e1cf48bbd65c3113c6b1ac58bf614b0a8c739aa3",
+   "release": "packs-v2"
   },
   {
-   "path": "tethys-v1/manifest.json",
+   "path": "tethys-v2/manifest.json",
    "bytes": 1004,
-   "sha256": "c0752bced04023c7569e3e44a6dde05d2abb1fe7d9d2299938586bb9785a63b6"
+   "sha256": "2b5b11d9f929f4fddb4f7c8d1dff4ebfeff31258445f29c880d6989f6fbea729",
+   "release": "packs-v2"
   },
   {
-   "path": "titan-v1/level-0.bin",
-   "bytes": 74998,
-   "sha256": "3d91d895c7c7976352e1f7bc184abd0dd881da7fcaff13eb5ee080f4030df4a3"
+   "path": "titan-v2/level-0.bin",
+   "bytes": 74981,
+   "sha256": "55e392c00097ec9cb5aaf22730c96df9306a74abdb019e87242681ebe1ee370c",
+   "release": "packs-v2"
   },
   {
-   "path": "titan-v1/level-1.bin",
-   "bytes": 263445,
-   "sha256": "899ee69e7ff4c1e7ba5b9cdda17ca19c3da5fc9c98e975fc75414cd8b523be55"
+   "path": "titan-v2/level-1.bin",
+   "bytes": 263588,
+   "sha256": "04d7d16d95bcb4fe446ce378ae236b99e9c339b3deb5a1abeb01481db89629d5",
+   "release": "packs-v2"
   },
   {
-   "path": "titan-v1/level-2.bin",
-   "bytes": 923984,
-   "sha256": "a29f2f0ec1c5ce2f5288ab11a4f3778ffba8aa900ba6fb5fa19ca2807b6b686a"
+   "path": "titan-v2/level-2.bin",
+   "bytes": 924749,
+   "sha256": "064775d5e4140778b2ac727b8cda552654490c14406a20e5884cf5a64bdfcf99",
+   "release": "packs-v2"
   },
   {
-   "path": "titan-v1/level-3.bin",
-   "bytes": 2909900,
-   "sha256": "405fb209dd5c98a7523cc162030252141ed88675eec9b29a8c0233e549301894"
+   "path": "titan-v2/level-3.bin",
+   "bytes": 2912957,
+   "sha256": "0ebd47975946f8d5da54874320fe44646e923e30a9ce46e6b95df71b92ce4f5f",
+   "release": "packs-v2"
   },
   {
-   "path": "titan-v1/manifest.json",
-   "bytes": 1009,
-   "sha256": "b7b97b02ae65ab68d23ef43eef8a1ef3ee6cd2c93ebb561612e3744bd878af10"
+   "path": "titan-v2/manifest.json",
+   "bytes": 1010,
+   "sha256": "9aa433208c108704e781a8630c8a5b4156267f5693478c207be5f429df97fac2",
+   "release": "packs-v2"
   },
   {
-   "path": "triton-v1/level-0.bin",
-   "bytes": 68786,
-   "sha256": "cb2ab55492cb6ca85ddfe00e03793b10b3f81f540f8805b6a19c2ae92e7e3670"
+   "path": "triton-v2/level-0.bin",
+   "bytes": 67538,
+   "sha256": "3471979d0fa9e8f4a873e56e9ace3a4766d9def89770e99f18eb49a9d0e8127e",
+   "release": "packs-v2"
   },
   {
-   "path": "triton-v1/level-1.bin",
-   "bytes": 233182,
-   "sha256": "a5be2c7a483a37bc1f0dd584fcdf33f99722b67e64a58c2c9b4a1d8099b52cf8"
+   "path": "triton-v2/level-1.bin",
+   "bytes": 230444,
+   "sha256": "32c7762b43401bc50630e18c389aa17176fbed441fbfdd092708b01d90b001c0",
+   "release": "packs-v2"
   },
   {
-   "path": "triton-v1/level-2.bin",
-   "bytes": 780195,
-   "sha256": "94fa9c7a36cc9618d59396bed52bd8708c4a894bb2848c3a722875eaef578fa9"
+   "path": "triton-v2/level-2.bin",
+   "bytes": 774669,
+   "sha256": "dc330d5ee5d0fb12bbe119deccb0c54c2df30ac0f8439ce365d8dbd4fda0bf18",
+   "release": "packs-v2"
   },
   {
-   "path": "triton-v1/level-3.bin",
-   "bytes": 2516223,
-   "sha256": "25a7fa43b4c4f98b42713ec4fa6098cca2d9d4937b85d2c0c61255e827be2377"
+   "path": "triton-v2/level-3.bin",
+   "bytes": 2504185,
+   "sha256": "a0dd0c5b157af971029d6c1388272bb43e29183e8cf8933d2507443194fc1593",
+   "release": "packs-v2"
   },
   {
-   "path": "triton-v1/manifest.json",
-   "bytes": 1031,
-   "sha256": "726ea80a63794e35f2b3fc649e6f606bda58a969e6f1a017b0ed8feede25be00"
+   "path": "triton-v2/manifest.json",
+   "bytes": 1030,
+   "sha256": "5d886418801af0d344c47a21e1e935bcd0f2f7a2d0b76f8a0d2bfcf23fe94fcd",
+   "release": "packs-v2"
   },
   {
    "path": "venus-v1/level-0.bin",

@@ -70,8 +70,9 @@ The app shows the credits of the sources in view (`web/credits.js`).
 
 ## Data in the packs
 
-The packs are not in this repository's source. `crates/solar-bake` builds them; a local build
-downloads them from the repository's `packs-v1` release (`tools/Fetch-Packs.mjs`) and the deployed
+The packs are not in this repository's source. `crates/solar-bake` builds them, and `tools/Rebake-Packs.mjs` rebuilds
+all of them from the sources below (docs/BAKING.md; `tools/rebake.json` lists every file with its URL, SHA-256 and
+product page). A local build downloads them from the repository's `packs-v1` and `packs-v2` releases (`tools/Fetch-Packs.mjs`) and the deployed
 app reads the same files from the owner's pack host (README, "Data packs"). Each body's credit is in its pack manifest
 and is shown in the app when the body is in view.
 
@@ -82,25 +83,26 @@ and is shown in the app when the body is in view.
 | Mercury | MESSENGER MDIS global mosaic 250 m (2013); MESSENGER USGS elevation 665 m v2 | MESSENGER, NASA/JHUAPL/CIW, NASA/JPL, USGS Astrogeology |
 | Venus | Magellan C3-MDIR radar mosaic 2025 m; Magellan topography 4641 m v2 | Magellan, NASA/JPL, USGS Astrogeology |
 | Mars | Viking colour mosaic 925 m; MGS MOLA elevation 463 m | Viking, MOLA, NASA/JPL, USGS Astrogeology |
-| Phobos | Mars Express SRC global mosaic, 16 pixels per degree | Mars Express SRC, ESA/DLR/FU Berlin, NASA/JPL, USGS Astrogeology |
+| Phobos | Mars Express SRC global mosaic, 16 pixels per degree | Mars Express SRC, ESA/DLR/FU Berlin, NASA/JPL, USGS Astrogeology. Its product page names the Mars Express HRSC Instrument Team as authors and Europlanet Research Infrastructure as originator |
 | Io, Europa, Ganymede, Callisto | Voyager and Galileo SSI global mosaics (1 km, 500 m, 1435 m, 1 km) | Voyager and Galileo SSI, NASA/JPL, USGS Astrogeology |
 | Enceladus, Tethys, Titan | Cassini ISS global mosaics (110 m, 293 m, 4 km) | Cassini ISS, NASA/JPL, USGS Astrogeology |
-| Dione, Rhea, Iapetus | Cassini and Voyager global mosaics (154 m, 417 m, 783 m) | Cassini ISS and Voyager, NASA/JPL, USGS Astrogeology |
+| Dione, Rhea, Iapetus | Cassini and Voyager global mosaics (154 m, 417 m, 783 m; Iapetus's page calls it 803 m) | Cassini ISS and Voyager, NASA/JPL, USGS Astrogeology |
 | Triton | Voyager 2 colour mosaic 600 m (gaps filled by its makers) | Voyager 2, NASA/JPL, USGS Astrogeology |
 | Pluto, Charon | New Horizons global mosaics and elevation 300 m (July 2017) | New Horizons, NASA/JHUAPL/SwRI, NASA/JPL, USGS Astrogeology |
-| Jupiter | Cassini's cylindrical map of December 2000 (NASA Photojournal PIA07782 in the source survey; the bake recorded no file name) | NASA/JPL/Space Science Institute |
+| Jupiter | NASA Photojournal PIA07782, "Cassini's Best Maps of Jupiter (Cylindrical Map)", from Cassini's flyby of December 2000: the JPEG, identified by reproducing the published map byte for byte | NASA/JPL/Space Science Institute |
 | Saturn, Uranus, Neptune | No data: colour by latitude, synthesized (`solar-bake schematic`); the app says so | none |
-| Sky | NASA SVS Deep Star Maps 2020 | NASA/Goddard Space Flight Center Scientific Visualization Studio. Gaia DR2: ESA/Gaia/DPAC |
+| Sky | NASA SVS Deep Star Maps 2020 (svs.gsfc.nasa.gov/4851), the 8192 x 4096 map `starmap_2020_8k.exr` | NASA/Goddard Space Flight Center Scientific Visualization Studio. Gaia DR2: ESA/Gaia/DPAC |
 | Bright stars | Yale Bright Star Catalogue, 5th revised edition (Hoffleit and Warren, 1991): the 906 stars brighter than magnitude 4.5 | See the note below |
-| Asteroids | JPL Small-Body Database (query API): orbital elements and absolute magnitudes of the numbered bodies | NASA/JPL-Caltech, Solar System Dynamics |
+| Asteroids | JPL Small-Body Database (query API): orbital elements and absolute magnitudes of the numbered bodies, as one query answered on 31 October 2026 (the query is in `tools/rebake.json`) | NASA/JPL-Caltech, Solar System Dynamics |
 
 The mosaics and elevation models of the other bodies are the global products USGS Astrogeology
 distributes. USGS states that data it authors or produces is in the U.S. public domain and asks
 for credit; the product pages ask to cite the authors, and several products were made by
 other teams (DLR for several Cassini mosaics, ESA/DLR/FU Berlin for Phobos, the
-MESSENGER and New Horizons teams). On 17 November 2026 the product pages could not be read
-by the tool used, so their use constraints are recorded here from search summaries, not from
-the pages: check a product's page before relying on it. The earlier survey is
+MESSENGER and New Horizons teams). Each product's page was read on 17 November 2026 (linked from
+`tools/rebake.json`): every one names USGS Astrogeology as publisher and gives its authors and
+originators; most state public-domain access, and most ask users to "Please cite authors". The
+credit lines above are the ones the app shows; the pages' own author lists are in `tools/rebake.json`. The earlier survey is
 [docs/SOLAR-SYSTEM-SOURCES-DRAFT.md](docs/SOLAR-SYSTEM-SOURCES-DRAFT.md); it lists candidates
 and is a draft.
 

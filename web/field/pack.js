@@ -56,7 +56,7 @@ export async function loadPack(baseUrl,onPage,{fetch:fetchFn=globalThis.fetch?.b
  const y=makeYielder();
  try{
   let manifest;
-  try{manifest=JSON.parse(new TextDecoder().decode(await get('manifest.json')));if(!/-v1$/.test(manifest.version||'')||manifest.page_texels!==TEXELS)throw Error('unsupported manifest');}
+  try{manifest=JSON.parse(new TextDecoder().decode(await get('manifest.json')));if(!/-v[0-9]+$/.test(manifest.version||'')||manifest.page_texels!==TEXELS)throw Error('unsupported manifest');}
   catch(e){fail(-1,e);return report;}
   for(const level of manifest.levels||[0,1,2,3]){
    const entry=manifest.files?.[level],stat={ok:false,pages:0,bytes:0};report.levels[level]=stat;
