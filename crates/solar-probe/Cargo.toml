@@ -1,0 +1,33 @@
+[package]
+name = "solar-probe"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Native wgpu probes and GPU audits for the Solar-System v2 shaders (tools/Check.ps1 -Gpu)."
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "solar-gpu-probe"
+path = "src/main.rs"
+
+[dependencies]
+solar-core = { path = "../solar-core" }
+wgpu = { version = "=30.0.1", default-features = false, features = ["std", "wgsl", "webgpu", "dx12", "vulkan", "metal"] }
+bytemuck = { version = "1.25", features = ["derive"] }
+futures-channel = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "=0.2.128"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["HtmlCanvasElement", "Window", "Performance"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+png = "0.17"

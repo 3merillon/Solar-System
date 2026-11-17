@@ -1,0 +1,33 @@
+[package]
+name = "solar-explorer"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Solar-System v2 browser renderer: Rust to WebAssembly on WebGPU and WGSL, with a native wgpu validation backend."
+[lib]
+crate-type = ["cdylib", "rlib"]
+[[bin]]
+name = "solar-explorer-probe"
+path = "src/main.rs"
+[dependencies]
+solar-core = { path = "../solar-core" }
+wgpu = { version = "=30.0.1", default-features = false, features = ["std", "wgsl", "webgpu", "dx12", "vulkan", "metal"] }
+bytemuck = { version = "1.25", features = ["derive"] }
+futures-channel = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+earcutr = "0.4.3"
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "=0.2.128"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["HtmlCanvasElement", "OffscreenCanvas", "Window", "Performance", "WorkerGlobalScope"] }
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+png = "0.17"
+
+[build-dependencies]
+naga = { version = "=30.0.1", features = ["wgsl-in", "wgsl-out"] }
+serde_json = "1"

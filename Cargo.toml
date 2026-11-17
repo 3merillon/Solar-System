@@ -1,0 +1,16 @@
+[workspace]
+members = ["crates/solar-core", "crates/solar-probe", "crates/solar-explorer", "crates/solar-bake"]
+default-members = ["crates/solar-core"]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.87"
+version = "0.1.0"
+publish = false
+license = "MIT"
+repository = "https://github.com/3merillon/Solar-System"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

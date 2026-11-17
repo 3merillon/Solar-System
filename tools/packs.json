@@ -1,0 +1,851 @@
+{
+ "release": "packs-v1",
+ "repository": "https://github.com/3merillon/Solar-System",
+ "files": [
+  {
+   "path": "callisto-v1/level-0.bin",
+   "bytes": 74185,
+   "sha256": "6dc24f730326421854ae2e75729039d10a5a166800bff47e12ef44cd56c613ca"
+  },
+  {
+   "path": "callisto-v1/level-1.bin",
+   "bytes": 305993,
+   "sha256": "f27b97be2f0c53eb141d48c195153f158f372aa3a2abeb2390d22df2e8c6fc6e"
+  },
+  {
+   "path": "callisto-v1/level-2.bin",
+   "bytes": 1215222,
+   "sha256": "86a2ef8e39aae957ab3218739877d19bfb036292cd8ff4ae077f3f3f1d825a37"
+  },
+  {
+   "path": "callisto-v1/level-3.bin",
+   "bytes": 4268213,
+   "sha256": "24ee8e421a439d7c44e5a974c7c9c2064b124888dde4dba65a23f9b2b648d8f1"
+  },
+  {
+   "path": "callisto-v1/manifest.json",
+   "bytes": 1031,
+   "sha256": "f66d0786186d60a85fd24e19b619d6e62ae1ffbb9fdb5368f3ef3bd1476004e7"
+  },
+  {
+   "path": "charon-v1/level-0.bin",
+   "bytes": 313671,
+   "sha256": "c053ab598f92c9ad0b67c78f56af9450fa6cf539783e7bd415e3f7671260842e"
+  },
+  {
+   "path": "charon-v1/level-1.bin",
+   "bytes": 1019046,
+   "sha256": "298cafc1efc5dfd571b46289957185d2904a10149c7d88e721878c50c1eaf60e"
+  },
+  {
+   "path": "charon-v1/level-2.bin",
+   "bytes": 3298317,
+   "sha256": "73307bd5d703efbf97c9ac08b53897a3263d63903917517325e332e8c93e88d5"
+  },
+  {
+   "path": "charon-v1/level-3.bin",
+   "bytes": 10843532,
+   "sha256": "df5d7a966f5cf469d9358d1519cd293a9e55da719b5f4352f9242189950da0c7"
+  },
+  {
+   "path": "charon-v1/manifest.json",
+   "bytes": 1217,
+   "sha256": "2aab69ade86c1df8ee7c77c42e260003bc0a6c6dac8555ddf92700fcbb759c71"
+  },
+  {
+   "path": "dione-v1/level-0.bin",
+   "bytes": 161192,
+   "sha256": "1406a2fb9e666e8a374bd5ccb6574f5fa625f88cba141fa729b264b31a6b010c"
+  },
+  {
+   "path": "dione-v1/level-1.bin",
+   "bytes": 627845,
+   "sha256": "dd92198fc0d36a5516277c862b2155bf42a34870702c9631e0141cba41226312"
+  },
+  {
+   "path": "dione-v1/level-2.bin",
+   "bytes": 2056993,
+   "sha256": "688e37021455514b1764d2c8c783a3118eb2f2d9ca668ee57b0e2f2b9eaa41a5"
+  },
+  {
+   "path": "dione-v1/level-3.bin",
+   "bytes": 6058106,
+   "sha256": "7f64d18f055dbe308c0b1bf6af412be952d3bb135817a13ee3171db31d775eab"
+  },
+  {
+   "path": "dione-v1/manifest.json",
+   "bytes": 1022,
+   "sha256": "e205024d8fb2578c0f5fafb7f9ffc67e7336ff10cdaccda1a47456e27fee4c67"
+  },
+  {
+   "path": "enceladus-v1/level-0.bin",
+   "bytes": 131284,
+   "sha256": "c29360f26cd4858159f2c893b340c5f687a99bb38a8464647caa5030387c5c58"
+  },
+  {
+   "path": "enceladus-v1/level-1.bin",
+   "bytes": 557155,
+   "sha256": "f474d08f65418ada1f5d34ce5374a767ba513e7639d2c38a94076978dd6b4d44"
+  },
+  {
+   "path": "enceladus-v1/level-2.bin",
+   "bytes": 1935038,
+   "sha256": "99eb36b8f01e31c4d861202f05bb125148ccf5aad19723d7a1170730509684fd"
+  },
+  {
+   "path": "enceladus-v1/level-3.bin",
+   "bytes": 5831063,
+   "sha256": "eda64c87e8bcae3018a21a2b62b152d46d0a7b17e23a9556b595cfa50a4a6495"
+  },
+  {
+   "path": "enceladus-v1/manifest.json",
+   "bytes": 1013,
+   "sha256": "9490fa649d7a828f4be795098de0d468b27b1e6ba8e211f0caad5a5ca9098d5e"
+  },
+  {
+   "path": "europa-v1/level-0.bin",
+   "bytes": 88595,
+   "sha256": "ca649f94f71eaf086e9d24219677738b1d6c94fa8ee09b0907afabe37dd386dc"
+  },
+  {
+   "path": "europa-v1/level-1.bin",
+   "bytes": 373871,
+   "sha256": "108cb80bc07d1bc0bc21e96d85f02d90d8c7bfe239153fa569c522307249e2dd"
+  },
+  {
+   "path": "europa-v1/level-2.bin",
+   "bytes": 1421677,
+   "sha256": "7a4066476fcc5f15b4a401b855e6757718f7920ac3943bc17d472cf85c8a2dd1"
+  },
+  {
+   "path": "europa-v1/level-3.bin",
+   "bytes": 4771774,
+   "sha256": "ac85e31c3a1243c1be4cdc5a65a7becd214962862abef9d27282aa58bad785e1"
+  },
+  {
+   "path": "europa-v1/manifest.json",
+   "bytes": 1026,
+   "sha256": "d5ff4d1c44a8bb602e3df041f8a0c62d578c53501e1d17cfeb18057627439661"
+  },
+  {
+   "path": "europa-v1/pages/4/face-0.bin",
+   "bytes": 2229904,
+   "sha256": "647343f8f3be52a3c252d685274b5c7d8200f5ea17004ac2556c6839e9ccfde3"
+  },
+  {
+   "path": "europa-v1/pages/4/face-1.bin",
+   "bytes": 2653923,
+   "sha256": "64c72856d2c90b3bad76fd8208cf9ed72584b20a73faaa741eb2b2c6587eb531"
+  },
+  {
+   "path": "europa-v1/pages/4/face-2.bin",
+   "bytes": 2043991,
+   "sha256": "a0d9a87f9f4ce68f59db1e362aa49aa4d6b9045f09ff15537efdf0e884933b9c"
+  },
+  {
+   "path": "europa-v1/pages/4/face-3.bin",
+   "bytes": 2335442,
+   "sha256": "569a918eda21a769644cd3f270dcb4ca50096a1fa45f4d2dd316878a12ff638b"
+  },
+  {
+   "path": "europa-v1/pages/4/face-4.bin",
+   "bytes": 2938860,
+   "sha256": "a094e7614848f03ccf35c72a3c7a4be72617b9be994a346614dc87369933f35f"
+  },
+  {
+   "path": "europa-v1/pages/4/face-5.bin",
+   "bytes": 2269104,
+   "sha256": "47e98c567cfae0047bb7f9e0ab8b20a7495c246903071da8c2e64e1683765357"
+  },
+  {
+   "path": "ganymede-v1/level-0.bin",
+   "bytes": 85992,
+   "sha256": "c576788edd36da5a74021e5fc82af7dc8e7a0c9d4145a46b9964af33b44874c3"
+  },
+  {
+   "path": "ganymede-v1/level-1.bin",
+   "bytes": 333890,
+   "sha256": "a017bd82995cd938c85fcdb0b45bef40f118f71ef123c1b428d040958b6ea1ae"
+  },
+  {
+   "path": "ganymede-v1/level-2.bin",
+   "bytes": 1334195,
+   "sha256": "5ec14f8575bc3ccba35f7b350148f59dfc50842c50c630b13f2168d3a2fc51ae"
+  },
+  {
+   "path": "ganymede-v1/level-3.bin",
+   "bytes": 5014546,
+   "sha256": "97dde72970eef4978d2cebeafe6c5cd95a9973f34a70b192456500010f003781"
+  },
+  {
+   "path": "ganymede-v1/manifest.json",
+   "bytes": 1026,
+   "sha256": "2b3bf8003336a6e88108e08b97eb4a5763ec0ac68d894e8516ec9ce3ed9a181f"
+  },
+  {
+   "path": "iapetus-v1/level-0.bin",
+   "bytes": 136140,
+   "sha256": "e3158d8ae570d7250e09088e0b2d26672f619ed24ac0935d86acc3801d91d52e"
+  },
+  {
+   "path": "iapetus-v1/level-1.bin",
+   "bytes": 492242,
+   "sha256": "9cd3c448645bb61391cd67cce8d338c53f85259d74e8f55ee35fc423b0411f9c"
+  },
+  {
+   "path": "iapetus-v1/level-2.bin",
+   "bytes": 1504200,
+   "sha256": "8fae2df07a10ab097f37d82c50495c7a0c9cc00507e37bb0a005fead4bc862fd"
+  },
+  {
+   "path": "iapetus-v1/level-3.bin",
+   "bytes": 4146244,
+   "sha256": "51f2b8f911b55c9f6ca67359c74a57ce68ccdeac41717fd8622c9f596d9c71f9"
+  },
+  {
+   "path": "iapetus-v1/manifest.json",
+   "bytes": 1026,
+   "sha256": "446f1e0843b262f3d0e36d160bcce557858cde5488b028c7ee8cf83aa4322f45"
+  },
+  {
+   "path": "io-v1/level-0.bin",
+   "bytes": 100523,
+   "sha256": "cf5c3dd49ac505db2eb7d8c44eaba3ce04db5005a28ebbb36c765ac7386f2a74"
+  },
+  {
+   "path": "io-v1/level-1.bin",
+   "bytes": 328411,
+   "sha256": "d1dcd52f459693ecad7fa6e9770d2186cac9477116ad51c44017076cfb916e74"
+  },
+  {
+   "path": "io-v1/level-2.bin",
+   "bytes": 1052494,
+   "sha256": "edf455e34f02b3bdd8f0d0c33b5630ca35d55a2364b907a1f0334253e5cee8c4"
+  },
+  {
+   "path": "io-v1/level-3.bin",
+   "bytes": 3273014,
+   "sha256": "8b8bc174a811781c10570672e1de756e621e2f696097f239142a5e084c80eeb5"
+  },
+  {
+   "path": "io-v1/manifest.json",
+   "bytes": 1011,
+   "sha256": "0f07a965e5e7e5471703d2be7bb0e3b1b7b4caadc183db5092a7f1470ad1df03"
+  },
+  {
+   "path": "mars-v1/level-0.bin",
+   "bytes": 437721,
+   "sha256": "ade96ec3d179ddfb44dd5cb9e13a51296c435177c7cafc68765a080261d655d3"
+  },
+  {
+   "path": "mars-v1/level-1.bin",
+   "bytes": 1575350,
+   "sha256": "dda4d95f0f0ca410b440572d233ba6000ea1694afa0dac45a69823ca566caee5"
+  },
+  {
+   "path": "mars-v1/level-2.bin",
+   "bytes": 5913166,
+   "sha256": "333266571e3a8f20e15a620008068db03b0381d16567c0b5cec5ccd221dab922"
+  },
+  {
+   "path": "mars-v1/level-3.bin",
+   "bytes": 22838599,
+   "sha256": "99f36025c1c9289ed7c3bb65f1cfb294b5b6815361ce7addcf6d8182f508b592"
+  },
+  {
+   "path": "mars-v1/manifest.json",
+   "bytes": 1028,
+   "sha256": "69723346d5930330f9756afea30c773fb852d14b97f4ee355fcc143bb848a5ec"
+  },
+  {
+   "path": "mars-v1/pages/4/face-0.bin",
+   "bytes": 14773437,
+   "sha256": "4a166c3c09812392d8772f7469cf92d0dc63246d805ce43eb3ef914e70d04bfd"
+  },
+  {
+   "path": "mars-v1/pages/4/face-1.bin",
+   "bytes": 13848391,
+   "sha256": "c7a78d5d7cfebea5ab8cc9246b13863ed17577e1b0e99f1c78328ea662d78ab1"
+  },
+  {
+   "path": "mars-v1/pages/4/face-2.bin",
+   "bytes": 14722157,
+   "sha256": "68abec977df9793f7fda0fefb4eeca1988e1477d56a26f5ef7e903c4a33b927f"
+  },
+  {
+   "path": "mars-v1/pages/4/face-3.bin",
+   "bytes": 14590876,
+   "sha256": "8d07e1e0bbf2eb9ffe06ced95186eef2c3e4bd466e408f7d42ce9e322000dabb"
+  },
+  {
+   "path": "mars-v1/pages/4/face-4.bin",
+   "bytes": 14931090,
+   "sha256": "a4fc90bcde081e238bfac2179284ce128903aedadec31fe0d3c9fa97a44ce1d4"
+  },
+  {
+   "path": "mars-v1/pages/4/face-5.bin",
+   "bytes": 13880494,
+   "sha256": "bc5a7d676849369626e1cd806620c09bcfce72637c2cbd3258f29644c135cb7b"
+  },
+  {
+   "path": "mars-v1/pages/5/face-0.bin",
+   "bytes": 53224248,
+   "sha256": "ab77c489f34c31f2121c1aa58a0ef8ac7ea47a0b70e0bb977fff8f95675cc1e8"
+  },
+  {
+   "path": "mars-v1/pages/5/face-1.bin",
+   "bytes": 50297516,
+   "sha256": "9b9783f558ac8a38efe52e38209d142eb9037c8d40911bacae7a57f71a99230d"
+  },
+  {
+   "path": "mars-v1/pages/5/face-2.bin",
+   "bytes": 50134568,
+   "sha256": "c25b43bab4094df639d7ce3cca029c0438702c116e5c6f96a035bab38f53846c"
+  },
+  {
+   "path": "mars-v1/pages/5/face-3.bin",
+   "bytes": 53817326,
+   "sha256": "373c70aabe95763bcce3486f550b6c51872826119a536e3608f64fd059aaf88b"
+  },
+  {
+   "path": "mars-v1/pages/5/face-4.bin",
+   "bytes": 53912407,
+   "sha256": "8fdce423be0cc67b42823753db452dc02a734966311be7090c82ea367d72c150"
+  },
+  {
+   "path": "mars-v1/pages/5/face-5.bin",
+   "bytes": 49826460,
+   "sha256": "332f1f7eab216da9126fa6774c9fcb8c8a5654824e24ad5c8f05f1364751ec6e"
+  },
+  {
+   "path": "mercury-v1/level-0.bin",
+   "bytes": 590385,
+   "sha256": "34ae358c79153ca061ce2e026c82917dc45eed6d4bfd11ca3bdc6972745ced8d"
+  },
+  {
+   "path": "mercury-v1/level-1.bin",
+   "bytes": 2140357,
+   "sha256": "1f1ee07c5f753ab7ffcf1bb33c6b9c85b80509db49b27bd339c8aec0b76e9b2e"
+  },
+  {
+   "path": "mercury-v1/level-2.bin",
+   "bytes": 7402179,
+   "sha256": "8fe7aae06ed6bd671ee916ddebd75e09376d39d55b07c3b4f5ea85bd0a1267c2"
+  },
+  {
+   "path": "mercury-v1/level-3.bin",
+   "bytes": 25412210,
+   "sha256": "149da46dcb7cd4d27152c5247e6f044c9b0a8be0f366b4003effa448cf27dda8"
+  },
+  {
+   "path": "mercury-v1/manifest.json",
+   "bytes": 1074,
+   "sha256": "e2b7eefe2774d3ddcfa9b8575cee9b67e538d60d78560e9287fddbbb3f3b004b"
+  },
+  {
+   "path": "mercury-v1/pages/4/face-0.bin",
+   "bytes": 14730544,
+   "sha256": "06195963eb2c3c1665158f182431042d544f0fdce186cfac1f03e0840a117128"
+  },
+  {
+   "path": "mercury-v1/pages/4/face-1.bin",
+   "bytes": 14792231,
+   "sha256": "f9afa40953663ea321a9c3f7704b41410c123ed3bc02700cfaa25aab89dba5de"
+  },
+  {
+   "path": "mercury-v1/pages/4/face-2.bin",
+   "bytes": 16970631,
+   "sha256": "825053f389f6986eb618fd3e577ac1a9762cac02d423bb20bad5f8fe41d02e1a"
+  },
+  {
+   "path": "mercury-v1/pages/4/face-3.bin",
+   "bytes": 15186861,
+   "sha256": "7874b582377e0cefc043a04c2f1bb5590a84076fb332f77b6dc55dfba982efd1"
+  },
+  {
+   "path": "mercury-v1/pages/4/face-4.bin",
+   "bytes": 16219157,
+   "sha256": "2426e7180d99f4a4edaf08355185b25d549560c5372f349676ab1dada88943a2"
+  },
+  {
+   "path": "mercury-v1/pages/4/face-5.bin",
+   "bytes": 15540473,
+   "sha256": "1a535fef2fe249cad543097d59ce28c10bb9f3bd14a81d96a2042f8eab89a9b0"
+  },
+  {
+   "path": "moon-v1/level-0.bin",
+   "bytes": 583066,
+   "sha256": "d65ffed6ba1fbf25e272759bf08c899f7fbb66356e076094e372122fb24286ff"
+  },
+  {
+   "path": "moon-v1/level-1.bin",
+   "bytes": 2125957,
+   "sha256": "d94b93f551f55a328ffd7432ec6e1773f7a34618a10825d6d96d3083fec0e5b5"
+  },
+  {
+   "path": "moon-v1/level-2.bin",
+   "bytes": 7675014,
+   "sha256": "8b2ee0e77ec124084f9507bfd4294ac7edb0fa68b6615956a6384c68d69354e8"
+  },
+  {
+   "path": "moon-v1/level-3.bin",
+   "bytes": 26851898,
+   "sha256": "c5993fd5f643ebe8894d79fc2d2b1717f053dea0a7aa124a23b1aa3f3c3a789d"
+  },
+  {
+   "path": "moon-v1/manifest.json",
+   "bytes": 1081,
+   "sha256": "12ee51bfb38f9ba33fdd6551ba80b8766430e1e939b9bc2a30b34852e238e680"
+  },
+  {
+   "path": "moon-v1/pages/4/face-0.bin",
+   "bytes": 16735725,
+   "sha256": "c01a7e788b2d41050e5de97801b5991534e2a2035ca65528c18ad65693b25f8b"
+  },
+  {
+   "path": "moon-v1/pages/4/face-1.bin",
+   "bytes": 15969704,
+   "sha256": "14880c832f47587fdb3ad86d3eb8a83545a6358beac27c0b869a6921606e9bfa"
+  },
+  {
+   "path": "moon-v1/pages/4/face-2.bin",
+   "bytes": 17438781,
+   "sha256": "17528065ad5bcebae8b47af7fdb11503b3db13c903eede16bcf011052afb5f45"
+  },
+  {
+   "path": "moon-v1/pages/4/face-3.bin",
+   "bytes": 17615367,
+   "sha256": "2ab8b154b33bc84b581d139fe5c9ab583ae13357b64f3f2f2213f15789dd485c"
+  },
+  {
+   "path": "moon-v1/pages/4/face-4.bin",
+   "bytes": 15479819,
+   "sha256": "256d4eb88c375a148c1c726bd442b1b6cc77e272ec075008d1fb7b44f1fcbc2b"
+  },
+  {
+   "path": "moon-v1/pages/4/face-5.bin",
+   "bytes": 16753966,
+   "sha256": "1dea895c822e9206dfbf232a2c90004b9075a4e55a1569f6e38d9bdfb31bb825"
+  },
+  {
+   "path": "moon-v1/pages/5/face-0.bin",
+   "bytes": 61147411,
+   "sha256": "5f3d783469fa3b7915f62c4833eb06a9c0ed49d4534b3abc4ac908743545c1c9"
+  },
+  {
+   "path": "moon-v1/pages/5/face-1.bin",
+   "bytes": 58119476,
+   "sha256": "f5c39c0b6a8634b46b2d104dde268844cd9eb9657a1b83e05610574fb22c664c"
+  },
+  {
+   "path": "moon-v1/pages/5/face-2.bin",
+   "bytes": 64013757,
+   "sha256": "9afe257467eb2b51de61e651880eca583dede73b6914a8630ed0f7ac59b26f71"
+  },
+  {
+   "path": "moon-v1/pages/5/face-3.bin",
+   "bytes": 64412718,
+   "sha256": "4b40caa00ba75999525508757bca0d9a12e1b31b1c7fdfdd974a5aaabd7f8e88"
+  },
+  {
+   "path": "moon-v1/pages/5/face-4.bin",
+   "bytes": 57223061,
+   "sha256": "c30fb3bd85c3f292ee3a9b55936b75728ab032affc21e0ac04ad504ba72682d5"
+  },
+  {
+   "path": "moon-v1/pages/5/face-5.bin",
+   "bytes": 60625437,
+   "sha256": "bd54ea849c7c405fe341e1c01ec7c3d10aa9ad1bc5beb5ea393cf5b8b04c58b1"
+  },
+  {
+   "path": "moon-v1/pages/6/face-0.bin",
+   "bytes": 206028671,
+   "sha256": "0bf4bec046cf58a3dc24572fed952b6829887e099d2f24849448ed24c61d4a87"
+  },
+  {
+   "path": "moon-v1/pages/6/face-1.bin",
+   "bytes": 195201311,
+   "sha256": "0ea188590f766ca32cdbde7188f9e3296e5bf7bcdee36f8c8999d402f8f4c149"
+  },
+  {
+   "path": "moon-v1/pages/6/face-2.bin",
+   "bytes": 221098180,
+   "sha256": "8f72c230434dab320482650305fbb75dd01a1a8809fd1de6a37befa36ad13b56"
+  },
+  {
+   "path": "moon-v1/pages/6/face-3.bin",
+   "bytes": 225000802,
+   "sha256": "2e23ea19bd0db22518da32bb27d4e203c4929d3136803ec9daf144d79a6533fc"
+  },
+  {
+   "path": "moon-v1/pages/6/face-4.bin",
+   "bytes": 187038621,
+   "sha256": "337be82c6864089fa1f63fd31ba9e0daec43ac3acf29f87407c4992505df8c7e"
+  },
+  {
+   "path": "moon-v1/pages/6/face-5.bin",
+   "bytes": 206544800,
+   "sha256": "b9d5e0c4a8e6b8c9c78530af2686b8535fb2a902b3c13f99411583791b87e5d2"
+  },
+  {
+   "path": "pack-earth-v1/level-0.bin",
+   "bytes": 422373,
+   "sha256": "36c2d03388e9b368eea87136845adf59d83ef6489941e40175ff26334dd6c25f"
+  },
+  {
+   "path": "pack-earth-v1/level-1.bin",
+   "bytes": 1503942,
+   "sha256": "12f197a8eb8b3d5d1d25c704026d87bcb44d19cb5fe23f1c2e79af6efea1495f"
+  },
+  {
+   "path": "pack-earth-v1/level-2.bin",
+   "bytes": 5650744,
+   "sha256": "fe2a58325d8c75e1ec46209b5a757392454fe53b8dc5cc0e3eb70a29cd7e992c"
+  },
+  {
+   "path": "pack-earth-v1/level-3.bin",
+   "bytes": 21253889,
+   "sha256": "a7755999aee9b85e5bdd54f5f14a966b98715caea69458d8bf352f13fb3eba01"
+  },
+  {
+   "path": "pack-earth-v1/manifest.json",
+   "bytes": 3787,
+   "sha256": "bdf3e096ebee31b2980472331dae1272cc905c05907f579838393a1d4e14090e"
+  },
+  {
+   "path": "phobos-v1/level-0.bin",
+   "bytes": 72422,
+   "sha256": "4991f004a3131be74ce4198c559ad0b6e18a23898cba18df1e13c10bce45adc9"
+  },
+  {
+   "path": "phobos-v1/level-1.bin",
+   "bytes": 235682,
+   "sha256": "bb6323843f217a3224008d5dbc9152869478ae0ec99d7ad395d3100a5ad87526"
+  },
+  {
+   "path": "phobos-v1/level-2.bin",
+   "bytes": 770222,
+   "sha256": "ee9fa3a85652777b8951c6c8e665ed4553ab987c3da5d62906a21b0e084e32a5"
+  },
+  {
+   "path": "phobos-v1/level-3.bin",
+   "bytes": 2432096,
+   "sha256": "3cf8868cb2b84042d3b8775c6340b7490e7ed9e11aa23be325efd22c3a94c6f6"
+  },
+  {
+   "path": "phobos-v1/manifest.json",
+   "bytes": 1026,
+   "sha256": "1e26ec509cd3fe259ba9c128367d7f715dbfdcdef5e9fe4bb67841222c005794"
+  },
+  {
+   "path": "pluto-v1/level-0.bin",
+   "bytes": 317577,
+   "sha256": "4e87e02f9cab8e8226ec416e417aa9148440ea8e91e05011501d728a4ce2ad2c"
+  },
+  {
+   "path": "pluto-v1/level-1.bin",
+   "bytes": 1163835,
+   "sha256": "15295db64e20ab98b96aa9f2497cdb106190f5a075c439438c8e30ce00274685"
+  },
+  {
+   "path": "pluto-v1/level-2.bin",
+   "bytes": 3960439,
+   "sha256": "134bf337da3b7efee47a815367435916f9331c764fbbc063347b0cc24a4dde88"
+  },
+  {
+   "path": "pluto-v1/level-3.bin",
+   "bytes": 13483690,
+   "sha256": "053e100909cd1b39d8843e8bfae03548973183000e9fe4649dcf4588e30eed16"
+  },
+  {
+   "path": "pluto-v1/manifest.json",
+   "bytes": 1213,
+   "sha256": "659a4928bd770e01147918d3784cd301962bf2a84bb8513f9ec0c7b6f6934cbc"
+  },
+  {
+   "path": "rhea-v1/level-0.bin",
+   "bytes": 101747,
+   "sha256": "85e136c07658402f86579cfa6b20ae4f355b8fea74b21d56831c8840b06837b4"
+  },
+  {
+   "path": "rhea-v1/level-1.bin",
+   "bytes": 394822,
+   "sha256": "cb5adfc844dc02f62363099b6153948ed224223a48e03071a6656902e5c08646"
+  },
+  {
+   "path": "rhea-v1/level-2.bin",
+   "bytes": 1307997,
+   "sha256": "b82964aeb0f34037adcae23bdeee34f97144bb08bc738926c10658a58dceb910"
+  },
+  {
+   "path": "rhea-v1/level-3.bin",
+   "bytes": 3816862,
+   "sha256": "45e40c15306f72f6ffca2fb15ac3ea90ff144bddf435d3ecb6183e2a123e92f5"
+  },
+  {
+   "path": "rhea-v1/manifest.json",
+   "bytes": 1018,
+   "sha256": "1d1af82c2668b10e368ec4f57ebffc1dfba7b42a391473e805264e232b7d4cb9"
+  },
+  {
+   "path": "solar/asteroids.bin",
+   "bytes": 4799952,
+   "sha256": "3232257591459ddad7b794a4638c05df340be993809e63d8dd3039581b158636"
+  },
+  {
+   "path": "solar/maps/callisto.jpg",
+   "bytes": 128793,
+   "sha256": "39c21886fc9af769aeb6d233e89c63f92a9e435fc30d71a6d27b43fb26d3b1f8"
+  },
+  {
+   "path": "solar/maps/charon.jpg",
+   "bytes": 101131,
+   "sha256": "dc6695d0e325482559c732be6349277a6995cafeeddc494885c0bf22e1a68b5e"
+  },
+  {
+   "path": "solar/maps/dione.jpg",
+   "bytes": 249098,
+   "sha256": "cdf6bac6b99e38858bc7b3efed6609512129696f0bc6aa491df83f2d52aca9a9"
+  },
+  {
+   "path": "solar/maps/earth.jpg",
+   "bytes": 103995,
+   "sha256": "dc96e204ccae706a3094b346176bbf07cd0684e6364eec8a72a34d9393c59144"
+  },
+  {
+   "path": "solar/maps/enceladus.jpg",
+   "bytes": 220384,
+   "sha256": "897977725fe8b48954062a57bfb80507705a041c0ee527d6aaf704591ead79cf"
+  },
+  {
+   "path": "solar/maps/europa.jpg",
+   "bytes": 152749,
+   "sha256": "c6a49c9b104e629a7e6c6a863972bddde14ad07f570c3626a132426a9cf70ae3"
+  },
+  {
+   "path": "solar/maps/ganymede.jpg",
+   "bytes": 143094,
+   "sha256": "df2dcb6fd8c71079f31bf4dbd879298d09666eba559253474b08210d66b5dd13"
+  },
+  {
+   "path": "solar/maps/iapetus.jpg",
+   "bytes": 208206,
+   "sha256": "df654fc3fd10b4b31f9d98e5c6c68305f6e8ff06d25f0c1f0f6cc6caa365f301"
+  },
+  {
+   "path": "solar/maps/io.jpg",
+   "bytes": 150674,
+   "sha256": "205c0400a422616427186675af5f6e23da45d9d9559ca28b352e9a8120f359dc"
+  },
+  {
+   "path": "solar/maps/jupiter.jpg",
+   "bytes": 132789,
+   "sha256": "ec16493d8b2cfbdfdc529d5494ff4fea45afd455f697b4276d989e064f74d6ba"
+  },
+  {
+   "path": "solar/maps/mars.jpg",
+   "bytes": 131837,
+   "sha256": "d7a1adbe108fd3e1846b1ee01de156667dd07eda2a6defd4e0d6439e2ce5417a"
+  },
+  {
+   "path": "solar/maps/mercury.jpg",
+   "bytes": 177283,
+   "sha256": "46f04bad63f51600592339fb1f679bb117cf7036a1bd1b87c98e96129b74ea7e"
+  },
+  {
+   "path": "solar/maps/moon.jpg",
+   "bytes": 219165,
+   "sha256": "5e99e77a70b19640b259aa107de8978fa9d1ae1e060047ef67e70efa0eff8f45"
+  },
+  {
+   "path": "solar/maps/neptune.jpg",
+   "bytes": 22197,
+   "sha256": "71d5d43318a533905af5aa871c79481635cb53c7e9ee95f3880d50df7ee8522b"
+  },
+  {
+   "path": "solar/maps/phobos.jpg",
+   "bytes": 108690,
+   "sha256": "a708e77ec2850f2501aa9c767695ee43b992721c3a8282af6668c97b8d9032f3"
+  },
+  {
+   "path": "solar/maps/pluto.jpg",
+   "bytes": 113646,
+   "sha256": "c993d83fbea932753b9eccfc11f8e767f553b1fef71f9932fed87093286922bc"
+  },
+  {
+   "path": "solar/maps/rhea.jpg",
+   "bytes": 174234,
+   "sha256": "7c453338629a10ed1a2e3980842acbd8c3bd43f921dcf95424580d13585a1cf8"
+  },
+  {
+   "path": "solar/maps/saturn.jpg",
+   "bytes": 29663,
+   "sha256": "f4ecb51f0a43ae12c2502ea6a007f4d312bac9f636f0bc23e7a1377cca8c99e0"
+  },
+  {
+   "path": "solar/maps/tethys.jpg",
+   "bytes": 235292,
+   "sha256": "5e8e4406f1de6f7457abb006dae357a91e81432bf4bba8c0a8463053b7de5704"
+  },
+  {
+   "path": "solar/maps/titan.jpg",
+   "bytes": 120454,
+   "sha256": "1ecfa10adf61ba8ce05806a73816355e111bb91fc86a810d9d5ed0dce5833f81"
+  },
+  {
+   "path": "solar/maps/triton.jpg",
+   "bytes": 97155,
+   "sha256": "362a7958a44c1ddea9ead528574b7183cefe1be0ce8941cd1c7b52846ae0ee42"
+  },
+  {
+   "path": "solar/maps/uranus.jpg",
+   "bytes": 18553,
+   "sha256": "ddac87e96131d85d48a74f71eb7a6630708c0c34be8bb07697c2c074fbee16ec"
+  },
+  {
+   "path": "solar/maps/venus.jpg",
+   "bytes": 133587,
+   "sha256": "6efdf1519b12710f876603ed5931968d020eb398e13b544ee7627f33ae609dc9"
+  },
+  {
+   "path": "solar/sky-0.jpg",
+   "bytes": 1811454,
+   "sha256": "70ff55cdefb69f413e3e4c89110c358361aa41f18572d2528e7a93e83445364c"
+  },
+  {
+   "path": "solar/sky-1.jpg",
+   "bytes": 1775723,
+   "sha256": "c5a9954bbfe83081b9885340a3c6a5d6c9d463db76189da3669f78f1326d1e70"
+  },
+  {
+   "path": "solar/sky-2.jpg",
+   "bytes": 1986026,
+   "sha256": "14a49ac983e3ee3e58c189257fe01a7bff9f022106712e5cde3a45e0214a4b9d"
+  },
+  {
+   "path": "solar/sky-3.jpg",
+   "bytes": 1951109,
+   "sha256": "23fd6088b27e9c3e2062bb4aa44e0754de80b13ddc52dece35f3865c048934cf"
+  },
+  {
+   "path": "solar/sky-4.jpg",
+   "bytes": 1931931,
+   "sha256": "867bbee05a8d885f56b21994122da18a5d27ac30e18f62ad11febc8d836ccab2"
+  },
+  {
+   "path": "solar/sky-5.jpg",
+   "bytes": 1956291,
+   "sha256": "34132bdceb402bc920f87c982f5c9df8b1d3dfc32ae263de6c4389d0eb06e0ab"
+  },
+  {
+   "path": "solar/solar-v1.bin",
+   "bytes": 2413596,
+   "sha256": "5aad67f1a6277177a86b65308de2fe126306cc60ba41771c428b51e9263fa59d"
+  },
+  {
+   "path": "solar/stars.bin",
+   "bytes": 28992,
+   "sha256": "7f01909d6cc02679b67c42085c14af6f1c0e2c7b96b3cea1870de89293b5964a"
+  },
+  {
+   "path": "tethys-v1/level-0.bin",
+   "bytes": 149941,
+   "sha256": "a20795eda215cbffbcd28cc1b7ae6c08f2a871e952b6482dbd30c91575a47ed7"
+  },
+  {
+   "path": "tethys-v1/level-1.bin",
+   "bytes": 559269,
+   "sha256": "1867212aed124a30e3be1fd42160dae61c5deef0d8cde5d4a81c63903cacc1e6"
+  },
+  {
+   "path": "tethys-v1/level-2.bin",
+   "bytes": 1763272,
+   "sha256": "5fbae6d90550d4983d7e32d9ff969b623e544a94e370cfad9da3e5fde599c877"
+  },
+  {
+   "path": "tethys-v1/level-3.bin",
+   "bytes": 5137908,
+   "sha256": "78b04b401ea064b0d380025d056306142f56ae96faca52db58115d0bca01df73"
+  },
+  {
+   "path": "tethys-v1/manifest.json",
+   "bytes": 1004,
+   "sha256": "c0752bced04023c7569e3e44a6dde05d2abb1fe7d9d2299938586bb9785a63b6"
+  },
+  {
+   "path": "titan-v1/level-0.bin",
+   "bytes": 74998,
+   "sha256": "3d91d895c7c7976352e1f7bc184abd0dd881da7fcaff13eb5ee080f4030df4a3"
+  },
+  {
+   "path": "titan-v1/level-1.bin",
+   "bytes": 263445,
+   "sha256": "899ee69e7ff4c1e7ba5b9cdda17ca19c3da5fc9c98e975fc75414cd8b523be55"
+  },
+  {
+   "path": "titan-v1/level-2.bin",
+   "bytes": 923984,
+   "sha256": "a29f2f0ec1c5ce2f5288ab11a4f3778ffba8aa900ba6fb5fa19ca2807b6b686a"
+  },
+  {
+   "path": "titan-v1/level-3.bin",
+   "bytes": 2909900,
+   "sha256": "405fb209dd5c98a7523cc162030252141ed88675eec9b29a8c0233e549301894"
+  },
+  {
+   "path": "titan-v1/manifest.json",
+   "bytes": 1009,
+   "sha256": "b7b97b02ae65ab68d23ef43eef8a1ef3ee6cd2c93ebb561612e3744bd878af10"
+  },
+  {
+   "path": "triton-v1/level-0.bin",
+   "bytes": 68786,
+   "sha256": "cb2ab55492cb6ca85ddfe00e03793b10b3f81f540f8805b6a19c2ae92e7e3670"
+  },
+  {
+   "path": "triton-v1/level-1.bin",
+   "bytes": 233182,
+   "sha256": "a5be2c7a483a37bc1f0dd584fcdf33f99722b67e64a58c2c9b4a1d8099b52cf8"
+  },
+  {
+   "path": "triton-v1/level-2.bin",
+   "bytes": 780195,
+   "sha256": "94fa9c7a36cc9618d59396bed52bd8708c4a894bb2848c3a722875eaef578fa9"
+  },
+  {
+   "path": "triton-v1/level-3.bin",
+   "bytes": 2516223,
+   "sha256": "25a7fa43b4c4f98b42713ec4fa6098cca2d9d4937b85d2c0c61255e827be2377"
+  },
+  {
+   "path": "triton-v1/manifest.json",
+   "bytes": 1031,
+   "sha256": "726ea80a63794e35f2b3fc649e6f606bda58a969e6f1a017b0ed8feede25be00"
+  },
+  {
+   "path": "venus-v1/level-0.bin",
+   "bytes": 420853,
+   "sha256": "2fc05f77ce9dfe5a2bb9d687fa644e88947efb56f4414d3c1ca8c3f7a0161661"
+  },
+  {
+   "path": "venus-v1/level-1.bin",
+   "bytes": 1598457,
+   "sha256": "b4eaa79669a4a9952035e05539ba39c1614f8498e2b13e2122f48908775cfc01"
+  },
+  {
+   "path": "venus-v1/level-2.bin",
+   "bytes": 6383659,
+   "sha256": "1e9d139314a8114e83bf0097904eaa11986225238e762b2618efdeec23cc7c63"
+  },
+  {
+   "path": "venus-v1/level-3.bin",
+   "bytes": 25142120,
+   "sha256": "3ed83636a09519267df8dbba82a32f12e998bbf6873442b8600faf96d064c582"
+  },
+  {
+   "path": "venus-v1/manifest.json",
+   "bytes": 1163,
+   "sha256": "5139c11962d8c47513c1e2d7c1d59c9a23b4694d42604c233e2946af6a77797b"
+  }
+ ]
+}

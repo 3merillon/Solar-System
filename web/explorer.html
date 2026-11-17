@@ -1,0 +1,80 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"><title>Solar System v2</title><link rel="icon" href="favicon.ico" sizes="16x16 32x32 48x48 64x64"><link rel="icon" type="image/svg+xml" href="favicon.svg"><link rel="icon" type="image/png" href="favicon-32x32.png" sizes="32x32"><link rel="icon" type="image/png" href="favicon-16x16.png" sizes="16x16"><link rel="apple-touch-icon" href="apple-touch-icon.png" sizes="180x180"><link rel="stylesheet" href="explorer.css"><link rel="stylesheet" href="flight-deck.css"></head>
+<body class="flight-deck"><canvas id="world" width="1920" height="1080"></canvas>
+<aside id="explorer-controls" aria-label="Controls">
+<div class="panel-head"><h1>Solar System <span>v2</span></h1><span id="state" role="status">Starting…</span><button id="toggle-ui" type="button" aria-controls="panel-body" aria-expanded="true" title="Collapse the panel (H)"><span class="toggle-glyph" aria-hidden="true">‹</span><span class="toggle-text">Hide</span> <kbd>H</kbd></button></div>
+<div id="panel-body">
+<div id="source-row" class="row support-links"><a href="https://github.com/3merillon/Solar-System" target="_blank" rel="noopener noreferrer">Source code on GitHub ↗</a></div>
+<section id="sound-section" class="group" aria-label="Soundtrack"></section>
+<section id="local-section" class="group">
+<label>World<select id="world-select"><option value="procedural">Procedural planet</option><option value="earth">Real Earth</option><option value="solar">Solar system</option></select></label>
+<label>Destination<select id="destination"><option value="orbit">Planetary orbit</option><option value="rough">Folded highlands</option><option value="ground">On the ground</option><option value="forest">Forest walk</option><option value="conifers">Conifer stand</option><option value="canopy">Above the canopy</option><option value="rocky">Rock garden</option><option value="coast">Coastal flight</option><option value="clouds">Above the clouds</option><option value="horizon">Grazing horizon</option><option value="face-edge">Cube face boundary</option><option value="corner">Three-face corner</option><option value="pole">North pole</option><option value="antipode">The far side</option></select></label>
+<div class="row local-only" hidden><button id="bookmark">Save place</button><select id="saved" aria-label="Saved places"><option value="">Saved places</option></select></div>
+</section>
+<details id="quality-section"><summary>Quality <output id="quality-name"></output></summary>
+<label>Preset<select id="quality"><option value="ultra">Ultra · full-size clouds, 128 samples</option><option value="high">High · half-size clouds, 64 samples</option><option value="medium">Medium · half-size clouds, 2x terrain</option><option value="low">Low · reduced clouds, shadows and water</option><option value="minimal">Minimal · phones and integrated GPUs</option><option value="custom">Custom · from the detail controls</option></select></label>
+<p class="note">Presets set every control in the sections below. Changing any control switches the preset to Custom.</p></details>
+<details id="world-light"><summary>World and light</summary><div class="local-only" hidden><label>Geological seed<input id="seed" type="number" value="2026" min="0" max="4294967295"></label><label>Body identity<input id="body" type="number" min="0" value="0"></label></div><div class="checks"><label><input id="atmosphere" type="checkbox" checked> Atmosphere</label><label><input id="animate" type="checkbox" checked> Animate</label></div><label>Sun elevation<input id="sun" type="range" min="-0.1" max="1" value="0.8" step="0.01"></label><div class="local-only" hidden><button id="edit">Raise a 100 m ground brush</button><div class="row"><button id="export">Save world</button><button id="import">Load world</button></div></div><input id="file" type="file" accept="application/json" hidden></details>
+<details id="terrain-controls"><summary>Terrain detail</summary>
+<label><input id="surface-detail" type="checkbox" checked> Shoreline and terrain detail (experimental)</label>
+<label><input id="ground-detail" type="checkbox" checked> Ground material on real Earth (synthesized)</label>
+<label for="lod-distance">LOD distance <output id="lod-distance-value">4.0x</output><input id="lod-distance" type="range" min="0.5" max="16" step="0.1" value="4"></label>
+<p class="note">Higher values keep fine detail farther away. 2x requests twice the range. The fixed terrain budget limits detail during rapid travel.</p>
+</details>
+<details id="scenery-controls"><summary>Scenery</summary>
+<div class="checks"><label><input id="trees" type="checkbox" checked> Trees and forests</label><label><input id="rocks" type="checkbox" checked> Rocks</label><label><input id="buildings" type="checkbox" checked> Buildings</label><label><input id="ground_cover" type="checkbox" checked> Grass and ground cover</label></div>
+<label for="scenery-density">Density <output id="scenery-density-value">1.0x</output><input id="scenery-density" type="range" min="0" max="1" step="0.05" value="1"></label>
+<label for="scenery-detail">Detail range <output id="scenery-detail-value">1.0x</output><input id="scenery-detail" type="range" min="0.5" max="2" step="0.1" value="1"></label>
+<label for="scenery-wind">Tree wind <output id="scenery-wind-value">1.0x</output><input id="scenery-wind" type="range" min="0" max="2" step="0.1" value="1"></label>
+<label for="cover-reach">Ground cover reach <output id="cover-reach-value">220 m</output><input id="cover-reach" type="range" min="20" max="280" step="5" value="220"></label>
+</details>
+<details id="cloud-controls"><summary>Clouds and weather</summary>
+<label class="check"><input id="clouds" type="checkbox" checked> Volumetric clouds</label>
+<label>Render resolution<select id="cloud-scale"><option value="1">Full · native pixels</option><option value="2">Half · ½ width and height</option><option value="4">Quarter · ¼ width and height</option></select></label>
+<label>Ray samples<select id="cloud-steps"><option>32</option><option>64</option><option>96</option><option selected>128</option><option>192</option><option>256</option></select></label>
+<label for="cloud-cover">Coverage <output id="cloud-cover-value"></output><input id="cloud-cover" type="range" min="-0.6" max="0.6" step="0.01" value="0.11"></label>
+<label for="cloud-type">Cloud types <output id="cloud-type-value">Natural mix</output><input id="cloud-type" type="range" min="-1" max="1" step="0.05" value="0"><span class="unit">Layered stratus ← natural mix → towering cumulus</span></label>
+<label for="cloud-wind">Wind speed <output id="cloud-wind-value"></output><input id="cloud-wind" type="range" min="0" max="100" step="1" value="9"></label>
+<label for="cloud-direction">Wind direction <output id="cloud-direction-value"></output><input id="cloud-direction" type="range" min="0" max="360" step="1" value="21"></label>
+<label for="cloud-speed">Cloud travel speed <output id="cloud-speed-value"></output><input id="cloud-speed" type="range" min="0" max="10" step="0.1" value="1"></label>
+<label for="cloud-evolution">Shape evolution <output id="cloud-evolution-value"></output><input id="cloud-evolution" type="range" min="0" max="10" step="0.1" value="1"></label>
+<label for="cloud-turbulence">Large-scale turbulence <output id="cloud-turbulence-value"></output><input id="cloud-turbulence" type="range" min="0" max="2" step="0.05" value="0.3"></label>
+<p class="note">Full resolution and 128 samples by default. Cloud travel and shape evolution animate independently; zero pauses that motion. The world Animate switch pauses all animation. More samples cost GPU time.</p>
+</details>
+<details id="water-controls"><summary>Ocean and underwater</summary>
+<label class="check"><input id="water" type="checkbox" checked> Ocean surface</label>
+<label>Sea level <span class="unit">metres above datum</span><input id="sea" type="number" min="-10000" max="10000" step="0.1" value="0"><input id="sea-slider" type="range" min="-2000" max="2000" step="1" value="0" aria-label="Sea level slider"></label>
+<div class="row"><button id="sea-here">Sea at my feet</button><button id="sea-reset">Reset datum</button></div>
+<label for="wave-height">Wave strength <output id="wave-height-value">1.0 m</output><input id="wave-height" type="range" min="0" max="8" step="0.1" value="1"></label>
+<label for="wave-speed">Wave speed <output id="wave-speed-value">1.0x</output><input id="wave-speed" type="range" min="0" max="3" step="0.1" value="1"></label>
+<label for="water-clarity">Water clarity <output id="water-clarity-value">1.0x</output><input id="water-clarity" type="range" min="0.25" max="4" step="0.05" value="1"></label>
+<label for="foam">Shore and crest foam <output id="foam-value">1.0x</output><input id="foam" type="range" min="0" max="2" step="0.1" value="1"></label>
+<div class="checks"><label><input id="caustics" type="checkbox" checked> Caustics and shafts</label></div>
+<p class="note">Sea level changes the water datum; terrain stays in place.</p></details>
+<details id="quality-controls"><summary>Quality details</summary>
+<label>Render scale<select id="render-scale"><option value="1">Native · 100%</option><option value="0.75">75%</option><option value="0.5">50%</option></select></label>
+<label>Far clouds<select id="cloud-far-scale"><option value="1">Full rate everywhere</option><option value="2">Half rate beyond the split</option><option value="4">Quarter rate beyond the split</option></select></label>
+<label for="cloud-far-distance">Far cloud split <output id="cloud-far-distance-value">16 km</output><input id="cloud-far-distance" type="range" min="2000" max="60000" step="1000" value="16000"></label>
+<label for="cloud-refresh">Cloud refresh <output id="cloud-refresh-value">1/4 per frame</output><input id="cloud-refresh" type="range" min="1" max="8" step="1" value="4"></label>
+<div class="checks"><label><input id="shadows" type="checkbox" checked> Sun shadows</label><label><input id="water-reflections" type="checkbox" checked> Water reflections</label></div>
+<div class="checks" id="finish-checks"><label title="Light spilling round bright things, as in an eye or a lens: 4% of the picture is spread over a wide soft halo, with no threshold; no light is added."><input id="bloom" type="checkbox" checked> Bloom</label><label title="The light of the lens itself from a bright star: faint ghosts across the picture, a halo and spikes, as a photograph shows them. It follows the light the picture really holds of the star, so whatever hides the star hides it."><input id="lens-flare" type="checkbox" checked> Lens flare</label><label title="The picture adapts to its light, slowly and in part, as an eye or a camera does: up to 1.5 stops darker when the view is very bright (close to a star, over snow), up to 0.7 brighter in the dark."><input id="auto-exposure" type="checkbox" checked> Auto exposure</label></div>
+<label for="shadow-steps">Terrain shadow steps <output id="shadow-steps-value">64</output><input id="shadow-steps" type="range" min="1" max="64" step="1" value="64"></label>
+<label for="shadow-cascades">Prop shadow cascades <output id="shadow-cascades-value">6</output><input id="shadow-cascades" type="range" min="1" max="6" step="1" value="6"></label>
+<label for="profile-quality">Cloud light samples <output id="profile-quality-value">100%</output><input id="profile-quality" type="range" min="0.25" max="1" step="0.25" value="1"></label>
+<label for="atmosphere-steps">Aerial perspective steps <output id="atmosphere-steps-value">12</output><input id="atmosphere-steps" type="range" min="2" max="24" step="2" value="12"></label>
+<label for="water-bands">Wave bands <output id="water-bands-value">10</output><input id="water-bands" type="range" min="2" max="10" step="1" value="10"></label>
+<label for="relief-steps">Relief refinement steps <output id="relief-steps-value">5</output><input id="relief-steps" type="range" min="0" max="8" step="1" value="5"></label>
+<p class="note">The resident cache allocation (memory tier) is chosen when the page loads; see Render diagnostics.</p>
+</details>
+<details id="data-controls" hidden><summary>Data</summary><pre id="data-lag"></pre><button id="clear-tiles">Clear tile cache</button></details>
+<details id="diagnostics"><summary>Render diagnostics</summary><label>View<select id="debug"><option value="0">Shaded world</option><option value="1">Surface normals</option><option value="2">Geometry spacing</option><option value="3">Log distance</option></select></label><label class="check"><input id="history" type="checkbox"> Experimental wind-aware cloud history</label><p class="note">Native terrain pixels. No temporal terrain AA. Cloud resolution and samples are selected in Clouds and weather. Opening diagnostics enables asynchronous counters and timing readbacks.</p><button id="capture">Capture image</button><pre id="stats"></pre></details>
+<details id="keys"><summary>Keys and gestures</summary><dl class="keys" id="local-keys"><dt><kbd>RMB</kbd> drag</dt><dd>look</dd><dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>move</dd><dt><kbd>Space</kbd> <kbd>C</kbd></dt><dd>ascend, descend</dd><dt><kbd>Q</kbd> <kbd>E</kbd></dt><dd>roll</dd><dt><kbd>Shift</kbd></dt><dd>3× boost</dd><dt>Wheel</dt><dd>speed</dd><dt><kbd>H</kbd></dt><dd>collapse the panel</dd><dt><kbd>F11</kbd></dt><dd>full screen</dd><dt>Touch</dt><dd>drag looks, pinch zooms or sets speed, twist rolls; the stick moves</dd></dl></details>
+<section id="support-section" class="group" aria-label="Support"><div class="group-title"><span>Support</span></div>
+<p class="note">Solar System v2 is free and open source. A donation supports more open-source projects and sharing. So does buying more source code: Pinionfall, a full custom voxel engine in Rust.</p>
+<div class="row support-links"><a href="https://buy.stripe.com/3cIcN77Lg7xv2g68sQdnW00" target="_blank" rel="noopener noreferrer">Donate ↗</a><a href="https://dev.pinionfall.com" target="_blank" rel="noopener noreferrer">Pinionfall source ↗</a></div>
+<p class="note">Donations are one-time, through Stripe; you choose the amount.</p>
+<div class="row support-links"><a href="https://x.com/3merillon" target="_blank" rel="noopener noreferrer">X: @3merillon ↗</a><a href="https://3merillon.com" target="_blank" rel="noopener noreferrer">3merillon.com ↗</a></div></section>
+<footer id="panel-foot"><span id="location"></span><span id="performance">—</span></footer>
+</div>
+</aside>
+<div id="dock"><div id="field-notice" hidden></div><section id="flight-hud" aria-label="Flight"><label class="speed" title="Thrust setting: the terminal speed this thrust gives at Earth's sea level. The wheel changes it too."><span class="hud-key">Throttle</span><input id="speed" type="range" min="-1" max="7" step="0.05" value="2"><output id="speed-value">100 m/s</output></label><span id="hud-readout" class="hud-readout" aria-live="off"></span></section><div id="attribution" hidden>Map data: loading source list…</div></div>
+<div id="error" role="alert" hidden></div><script type="module" src="explorer.js"></script></body></html>

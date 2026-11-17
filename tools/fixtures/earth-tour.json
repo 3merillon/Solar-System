@@ -1,0 +1,243 @@
+{
+ "comment": "Fixed tour for recorded tiles. lon, lat in degrees, alt in metres above sea level, heading in degrees. Tests replay this; only tools/Record-Earth-Tour.mjs may fetch it, gently.",
+ "stops": [
+  {
+   "name": "lausanne",
+   "lon": 6.6275,
+   "lat": 46.5075,
+   "alt": 1400,
+   "heading": 170
+  },
+  {
+   "name": "lausanne-north",
+   "lon": 6.6275,
+   "lat": 46.5075,
+   "alt": 1400,
+   "heading": 350
+  },
+  {
+   "name": "ouchy",
+   "lon": 6.6275,
+   "lat": 46.504,
+   "alt": 520,
+   "heading": 170
+  },
+  {
+   "name": "ouchy-shore",
+   "lon": 6.6275,
+   "lat": 46.507,
+   "alt": 400,
+   "heading": 0
+  },
+  {
+   "name": "lavaux",
+   "lon": 6.75,
+   "lat": 46.486,
+   "alt": 760,
+   "heading": 240
+  },
+  {
+   "name": "lake",
+   "lon": 6.8,
+   "lat": 46.43,
+   "alt": 1500,
+   "heading": 150
+  },
+  {
+   "name": "chablais",
+   "lon": 6.85,
+   "lat": 46.32,
+   "alt": 2600,
+   "heading": 150
+  },
+  {
+   "name": "dents-du-midi",
+   "lon": 6.89,
+   "lat": 46.205,
+   "alt": 3500,
+   "heading": 150
+  },
+  {
+   "name": "dents-low",
+   "lon": 6.9,
+   "lat": 46.17,
+   "alt": 2300,
+   "heading": 60
+  },
+  {
+   "name": "edge-north",
+   "lon": 8.9,
+   "lat": 45.1,
+   "alt": 5000,
+   "heading": 180
+  },
+  {
+   "name": "edge-cross",
+   "lon": 8.9,
+   "lat": 44.65,
+   "alt": 5000,
+   "heading": 180
+  },
+  {
+   "name": "edge-south",
+   "lon": 8.9,
+   "lat": 44.2,
+   "alt": 5000,
+   "heading": 180
+  },
+  {
+   "name": "corner",
+   "lon": 45,
+   "lat": 35.2644,
+   "alt": 8000,
+   "heading": 90
+  },
+  {
+   "name": "north-pole",
+   "lon": 0,
+   "lat": 89.9,
+   "alt": 300000,
+   "heading": 180
+  },
+  {
+   "name": "south-pole",
+   "lon": 0,
+   "lat": -89.9,
+   "alt": 300000,
+   "heading": 0
+  },
+  {
+   "name": "everest",
+   "lon": 86.925,
+   "lat": 27.9,
+   "alt": 10000,
+   "heading": 0
+  },
+  {
+   "name": "rainier",
+   "lon": -121.76,
+   "lat": 46.75,
+   "alt": 4800,
+   "heading": 0
+  },
+  {
+   "name": "ligurian",
+   "lon": 8.9,
+   "lat": 44.2,
+   "alt": 1500,
+   "heading": 20
+  },
+  {
+   "name": "portofino",
+   "lon": 9.205,
+   "lat": 44.285,
+   "alt": 140,
+   "heading": 60
+  },
+  {
+   "name": "portofino-under",
+   "lon": 9.215,
+   "lat": 44.298,
+   "alt": -6,
+   "heading": 40
+  },
+  {
+   "name": "andes",
+   "lon": -66.3,
+   "lat": -24.2,
+   "alt": 5600,
+   "heading": 80
+  },
+  {
+   "name": "lake-surface",
+   "lon": 6.72,
+   "lat": 46.47,
+   "alt": 376,
+   "heading": 150
+  },
+  {
+   "name": "lake-under",
+   "lon": 6.72,
+   "lat": 46.47,
+   "alt": 360,
+   "heading": 60
+  },
+  {
+   "name": "lake-shore",
+   "lon": 6.6275,
+   "lat": 46.5045,
+   "alt": 378,
+   "heading": 0
+  },
+  {
+   "name": "lake-neuchatel",
+   "lon": 6.85,
+   "lat": 46.88,
+   "alt": 600,
+   "heading": 30
+  },
+  {
+   "name": "emosson",
+   "lon": 6.93,
+   "lat": 46.07,
+   "alt": 2100,
+   "heading": 200
+  },
+  {
+   "name": "coast-somme",
+   "lon": 1.5,
+   "lat": 50.22,
+   "alt": 6000,
+   "heading": 60
+  },
+  {
+   "name": "coast-flanders",
+   "lon": 2.85,
+   "lat": 51.25,
+   "alt": 6000,
+   "heading": 60
+  },
+  {
+   "name": "coast-seine",
+   "lon": 0.05,
+   "lat": 49.38,
+   "alt": 6000,
+   "heading": 90
+  },
+  {
+   "name": "coast-telaviv",
+   "lon": 34.75,
+   "lat": 32.05,
+   "alt": 6000,
+   "heading": 20
+  },
+  {
+   "name": "coast-oman",
+   "lon": 58.6,
+   "lat": 23.6,
+   "alt": 6000,
+   "heading": 120
+  },
+  {
+   "name": "coast-dakar",
+   "lon": -17.45,
+   "lat": 14.7,
+   "alt": 6000,
+   "heading": 0
+  },
+  {
+   "name": "lisbon",
+   "lon": -9.2,
+   "lat": 38.7,
+   "alt": 6000,
+   "heading": 0
+  },
+  {
+   "name": "germany-far",
+   "lon": 10.0,
+   "lat": 51.0,
+   "alt": 5000000,
+   "heading": 0
+  }
+ ]
+}

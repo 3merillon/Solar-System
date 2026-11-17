@@ -1,0 +1,179 @@
+{
+  "surface": {
+    "version": 1,
+    "settings": {
+      "trees": false,
+      "rocks": false,
+      "scenery_density": 1,
+      "scenery_detail": 1,
+      "scenery_wind": 1,
+      "scenery_budget": 1024,
+      "scenery_version": 1,
+      "scenery_draw_limit": 32768,
+      "scenery_variant_limit": 16,
+      "scenery_lod": 0,
+      "scenery_isolate": 0,
+      "seed": 2026,
+      "body": 0,
+      "sector": [
+        "0",
+        "0",
+        "0"
+      ],
+      "relief": 1,
+      "roughness": 0.48,
+      "sea": 0,
+      "wave_height": 0,
+      "wave_speed": 1,
+      "water_clarity": 1,
+      "foam": 1,
+      "caustics": false,
+      "atmosphere": true,
+      "clouds": false,
+      "water": true,
+      "cloud_history": false,
+      "reference": true,
+      "sun": [
+        -0.45,
+        0.8,
+        0.38
+      ],
+      "cloud_cover": 0.11,
+      "cloud_speed": 1,
+      "cloud_evolution": 1,
+      "cloud_turbulence": 0.3,
+      "cloud_type": 0,
+      "cloud_steps": 128,
+      "cloud_diagnostic": 0,
+      "surface_detail": true,
+      "cloud_scale": 1,
+      "wind": [
+        8,
+        3
+      ],
+      "exposure": 1.3,
+      "tolerance": 2,
+      "lod_distance": 2,
+      "patch_cap": 2240,
+      "generation_limit": 18496,
+      "debug": 0,
+      "edits": []
+    },
+    "camera": [
+      [
+        -4030415.052393423,
+        6760773.039295191,
+        18531.502361908104
+      ],
+      [
+        -4029902.993563237,
+        6759914.092142441,
+        18529.14795937197
+      ],
+      [
+        -0.8589495333869949,
+        -0.5120602494768209,
+        2.9563762993234377e-08
+      ]
+    ],
+    "mode": "orbit",
+    "time": 4,
+    "animation": {
+      "time": 4,
+      "travel": 4,
+      "evolution": 4,
+      "drift": [
+        32,
+        12
+      ]
+    }
+  },
+  "cloud": {
+    "version": 1,
+    "settings": {
+      "trees": false,
+      "rocks": false,
+      "scenery_density": 1,
+      "scenery_detail": 1,
+      "scenery_wind": 1,
+      "scenery_budget": 1024,
+      "scenery_version": 1,
+      "scenery_draw_limit": 32768,
+      "scenery_variant_limit": 16,
+      "scenery_lod": 0,
+      "scenery_isolate": 0,
+      "seed": 2026,
+      "body": 0,
+      "sector": [
+        "0",
+        "0",
+        "0"
+      ],
+      "relief": 1,
+      "roughness": 0.48,
+      "sea": 0,
+      "wave_height": 1,
+      "wave_speed": 1,
+      "water_clarity": 1,
+      "foam": 1,
+      "caustics": true,
+      "atmosphere": true,
+      "clouds": true,
+      "water": false,
+      "cloud_history": false,
+      "reference": true,
+      "sun": [
+        -0.895904204315073,
+        -0.44424729227151893,
+        0
+      ],
+      "cloud_cover": 0.3,
+      "cloud_speed": 0,
+      "cloud_evolution": 0,
+      "cloud_turbulence": 0.3,
+      "cloud_type": 1,
+      "cloud_steps": 256,
+      "cloud_diagnostic": 6,
+      "cloud_scale": 1,
+      "wind": [
+        8,
+        3
+      ],
+      "exposure": 1.3,
+      "tolerance": 2,
+      "lod_distance": 2,
+      "patch_cap": 2240,
+      "generation_limit": 18496,
+      "debug": 0,
+      "edits": []
+    },
+    "camera": [
+      [
+        -3279498.8442461397,
+        5465831.4070769,
+        0
+      ],
+      [
+        -3280363.9572884403,
+        5465329.8301395895,
+        0
+      ],
+      [
+        -0.5015769373100593,
+        0.8651130423006353,
+        0
+      ]
+    ],
+    "mode": "flight",
+    "time": 20,
+    "animation": {
+      "time": 20,
+      "travel": 0,
+      "evolution": 0,
+      "drift": [
+        0,
+        0
+      ]
+    }
+  }
+}

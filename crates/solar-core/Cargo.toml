@@ -1,0 +1,9 @@
+[package]
+name = "solar-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Renderer-independent reference maths for Solar-System v2: surfaces, bounds, pages, ephemeris, flight and streaming."
