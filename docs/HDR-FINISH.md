@@ -1,5 +1,8 @@
 # The picture's finish
 
+Medium, High and Ultra resolve an eight-position jitter sequence before bloom and exposure. Surface hits reproject with the GPU-adjusted body camera. In space the resolve uses inertial camera axes and double-precision inter-frame translation. The two HDR histories carry signed log distance for depth rejection. At a slow-moving terrain silhouette their alpha channel can instead hold the last eight ground/sky coverage samples. The resolve reconstructs the two sides separately and retires that coverage as camera motion increases. Cloud and water receive less history weight. Clouds integrate on a fixed screen lattice while opaque geometry takes subpixel samples. Cloud depth for reprojection is the opacity-weighted distance through the near and far volumes, including direct silhouette samples. A cut, target reallocation, or change between the surface and orbital passes resets accumulation. Low and Minimal omit the pass and allocate only placeholder history textures. The quality details include a manual switch. The HUD is drawn after the resolve.
+
+
 16 November 2026. Every frame is made in linear light and becomes the display image in one place, `shaders/finish.wgsl`
 (`crates/solar-explorer/src/finish.rs`): bloom, the lens flare, exposure, the tone curve, the display's power of 2.2. Before
 this the composite wrote the display image itself (exposure, `c / (1 + c)` per channel, gamma), the space layer carried a copy

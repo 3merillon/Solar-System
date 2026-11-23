@@ -41,15 +41,15 @@ pub const STATE_BYTES: u64 = 8192;
 pub const ARGS: u64 = 40 * 4;
 pub const DISPATCH: u64 = 168 * 4;
 /// Compacted draw list entries over all classes (scenery.wgsl `SC_LIST_TOTAL`).
-pub const VISIBLE: u64 = 74_752;
+pub const VISIBLE: u64 = 107_520;
 /// Ground cover instances over all lists (scenery_cover.wgsl `CV_TOTAL`), 32 bytes each.
 pub const COVER: u64 = 155_648;
 pub const COVER_BASES: [usize; 6] = [0, 16_384, 81_920, 90_112, 122_880, 139_264];
 /// Skeleton scratch, vec4 (1009 branches x 4 + 2048 cards x 3).
 pub const SKELETON: u64 = 4036 + 2048 * 3;
 /// Mesh classes: vertices per variant and template groups (count, columns, rows), as in scenery_trees.wgsl.
-pub const CLASS_VERTS: [u64; 10] = [23825, 5891, 932, 1734, 294, 212, 124, 324, 56, 148];
-pub const GROUPS: [&[(u64, u64, u64)]; 11] = [
+pub const CLASS_VERTS: [u64; 10] = [23825, 5891, 932, 1734, 486, 212, 124, 324, 56, 148];
+pub const GROUPS: [&[(u64, u64, u64)]; 12] = [
     &[
         (1, 12, 20),
         (48, 7, 8),
@@ -60,13 +60,14 @@ pub const GROUPS: [&[(u64, u64, u64)]; 11] = [
     &[(1, 8, 10), (48, 5, 4), (192, 3, 2), (512, 1, 1)],
     &[(1, 5, 5), (48, 3, 1), (128, 1, 1)],
     &[(6, 16, 16)],
-    &[(6, 6, 6)],
+    &[(6, 8, 8)],
     &[(20, 1, 4), (3, 1, 1)],
     &[(10, 1, 4), (4, 1, 2)],
     &[(36, 2, 2)],
     &[(7, 1, 3)],
     &[(3, 3, 2), (28, 1, 1)],
     &[(8, 1, 4)],
+    &[(6, 2, 2)],
 ];
 pub fn template_quads() -> u64 {
     GROUPS
@@ -214,7 +215,7 @@ impl Scenery {
         let capacity = tier.sc_cap();
         let atlas_size = tier.atlas;
         let leaf_size = tier.leaf_atlas;
-        let variants = tier.sc_variants();
+        let variants = tier.sc_variants() - 24;
         let atlas_mips = tier.atlas_mips();
         let leaf_mip_count = leaf_size.trailing_zeros().saturating_sub(4).max(1);
         let state = g.buffer(
@@ -862,6 +863,7 @@ impl Scenery {
         for class in 0..5 {
             p.draw_indexed_indirect(&self.state, ARGS + class * 32);
         }
+        p.draw_indexed_indirect(&self.state, ARGS + 14 * 32);
         p.set_pipeline(&self.card);
         p.set_bind_group(0, &self.card_group, &[]);
         p.draw_indirect(&self.state, ARGS + 5 * 32);
@@ -1170,9 +1172,9 @@ impl Scenery {
             "capture_radii":(0..variants.min(72)).map(|i|f32::from_bits(u(344+i))).collect::<Vec<_>>(),
             "requests":u(20),"generated":u(21),"resident":u(22),"trees":u(23),"rocks":u(24),"deferred":u(25),"overflow":u(26),"support_deferred":u(27),
             "canonical_display_delta_max_m":f32::from_bits(u(28)),"footprint_rejected":u(29),"support_reused":u(30),"support_refreshed":u(31),
-            "mesh_draws":(0..5).map(draws).sum::<u32>(),"impostor_draws":draws(5),
-            "class_draws":(0..6).map(draws).collect::<Vec<_>>(),
-            "class_appended":(0..6).map(|k|u(416+k)).collect::<Vec<_>>(),
+            "mesh_draws":(0..5).map(draws).sum::<u32>() + draws(14),"impostor_draws":draws(5),
+            "class_draws":(0..6).chain(std::iter::once(14)).map(draws).collect::<Vec<_>>(),
+            "class_appended":(0..6).chain(std::iter::once(14)).map(|k|u(416+k)).collect::<Vec<_>>(),
             "templates":u(7)!=0,"job":[u(36),u(37)],"jobs_done":u(38),"support_queue":u(39),
             "cover":{"instances":u(32),"overflow":u(33),"candidates":u(34),"water_rejected":u(35),"draws":(8..14).map(draws).collect::<Vec<_>>()}
         })

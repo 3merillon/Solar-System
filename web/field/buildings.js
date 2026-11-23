@@ -49,6 +49,16 @@ export function buildingSources(tiles){
      points.push([x,y,first+(i+1)%ring.length,boundary?1:0]);
     }}
     const seed=hash(feature.id??`${tile.z}/${tile.x}/${tile.y}/${gi}/${cx}/${cy}`),meta=buildingMetadata(prop,seed);
+    // A tile-cut footprint cannot identify a unique main entrance. For a
+    // complete ground-level footprint choose one exterior wall in metres.
+    const exteriorEnd=start+rings[0].length;
+    let entrance=-1,longest=2.4,clipped=false;
+    for(let j=start;j<exteriorEnd;j++){
+     const [x,y,next,cut]=points[j];clipped||=cut!==0;
+     const length=Math.hypot(points[next][0]-x,points[next][1]-y);
+     if(length>longest){longest=length;entrance=j;}
+    }
+    if(meta.minimum===0&&meta.height>=2.4&&!clipped&&entrance>=0)points[entrance][3]|=2;
     records.push([...hi,meta.height,...lo,meta.minimum,...east,meta.style,...north,meta.roofHeight,...bounds,start,count,seed,0,...meta.colour,meta.roofKind]);if(meta.estimated)stats.estimatedHeights++;
    }
   }

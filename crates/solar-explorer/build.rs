@@ -222,6 +222,7 @@ fn main() {
     validate(&base);
     let compute = [
         "building_begin",
+        "building_remap",
         "building_generate",
         "shade",
         "shade_initial",
@@ -231,10 +232,10 @@ fn main() {
         "cloud_far_pass",
         "weather_generate",
         "cloud_far_map",
-        "cloud_cache_begin",
-        "cloud_local_generate",
+        "cloud_shape_generate",
         "atmosphere_lut",
         "composite",
+        "temporal_resolve",
         "water_chart_prepare",
         "water_foam_step",
         "water_cache_generate",

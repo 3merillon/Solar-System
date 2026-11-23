@@ -46,9 +46,10 @@ struct Quad {@builtin(position) clip:vec4<f32>,@location(0) @interpolate(flat) b
  let b=bodies[index];
  if b.rect.z>=4.0{let c=vec2<f32>(f32((id<<1u)&2u),f32(id&2u))*2.0-1.0;return Quad(vec4<f32>(c,0,1),index);}
  var corners=array<vec2<f32>,6>(vec2<f32>(-1,-1),vec2<f32>(1,-1),vec2<f32>(-1,1),vec2<f32>(-1,1),vec2<f32>(1,-1),vec2<f32>(1,1));
- return Quad(vec4<f32>(b.rect.xy+corners[id]*b.rect.zw,0,1),index);
+ return Quad(vec4<f32>(b.rect.xy+projection_offset()+corners[id]*b.rect.zw,0,1),index);
 }
-fn ray(pixel:vec2<f32>)->vec3<f32>{let uv=pixel/v.screen.xy*2.0-1.0;return normalize(v.forward.xyz+v.right.xyz*uv.x*v.screen.z*v.screen.w-v.up.xyz*uv.y*v.screen.w);}
+fn projection_offset()->vec2<f32>{return vec2<f32>(-2.0*v.right.w,2.0*v.up.w)/v.screen.xy;}
+fn ray(pixel:vec2<f32>)->vec3<f32>{let uv=(pixel+vec2<f32>(v.right.w,v.up.w))/v.screen.xy*2.0-1.0;return normalize(v.forward.xyz+v.right.xyz*uv.x*v.screen.z*v.screen.w-v.up.xyz*uv.y*v.screen.w);}
 // Whether a point lies in an oblate planet's shadow: the ray from it toward the Sun meets the spheroid with equatorial radius a
 // and polar radius c (pole along y), centred at the origin. Exact for the figure; the Sun's disk (a penumbra of tens of km at
 // Saturn's rings) is not modelled. The ring sheet and the ring rocks both use it, so their shadow edges agree.
@@ -81,7 +82,9 @@ fn far_cloud(b:Body,p:vec3<f32>,n:vec3<f32>,rd:vec3<f32>,footprint:f32,ground:ve
  let e=normalize(fixed(b,rd));let slant=max(-dot(n,e),0.15);let cover=1.0-pow(max(1.0-opacity,1e-4),1.0/slant);
  let mu=dot(e,b.sun.xyz);let phase=0.24+0.12/pow(max(0.10,1.36-1.2*mu),1.5)+0.08*pow(max(0.0,-mu),2.0);
  let toward=dot(n,b.sun.xyz);let day=smoothstep(-0.18,0.08,toward);
- let ambient=vec3<f32>(0.28,0.34,0.42)*day;let direct=vec3<f32>(1.8,1.58,1.32)*phase*0.85*smoothstep(-0.05,0.35,toward);
+ let lit=0.85*smoothstep(-0.05,0.35,toward);
+ let ambient=(vec3<f32>(0.31,0.37,0.46)+vec3<f32>(0.17,0.16,0.14)*sqrt(lit))*day;
+ let direct=vec3<f32>(1.8,1.58,1.32)*phase*lit;
  return mix(ground,(ambient+direct)*b.sun.w,cover);
 }
 // Each level of the far cloud map from the one above it.
@@ -962,7 +965,7 @@ fn star_splat(id:u32,direction:vec3<f32>,magnitude:f32,tint:vec3<f32>)->Point{
  let sigma=0.55+0.5*max(0.0,2.5-magnitude)*0.28;let reach=sigma*3.2;
  let c=vec2<f32>(dot(d,v.right.xyz)/(v.screen.z*v.screen.w),dot(d,v.up.xyz)/v.screen.w)/z+corners[id]*reach/v.screen.xy*2.0;
  // In units of sigma, for the fragment.
- return Point(vec4<f32>(c,0,1),tint*min(flux,4.0),corners[id]*3.2);
+ return Point(vec4<f32>(c+projection_offset(),0,1),tint*min(flux,4.0),corners[id]*3.2);
 }
 @vertex fn star_vertex(@builtin(vertex_index) id:u32,@builtin(instance_index) index:u32)->Point{
  let s=stars[index*2u];let motion=stars[index*2u+1u];let bits=u32(motion.w);
@@ -992,7 +995,7 @@ fn asteroid_position(i:u32)->vec3<f32>{
  let magnitude=asteroids[id*3u+1u].w+5.0*log(r*delta)/log(10.0)+0.03*phase;
  let flux=pow(10.0,-0.4*(magnitude-1.0))*0.09*pow(10.0,0.4*v.tone.w);
  let c=vec2<f32>(dot(d,v.right.xyz)/(v.screen.z*v.screen.w),dot(d,v.up.xyz)/v.screen.w)/z;
- return AsteroidPoint(vec4<f32>(c,0,1),vec3<f32>(1.0,0.92,0.82)*min(flux,1.5));
+ return AsteroidPoint(vec4<f32>(c+projection_offset(),0,1),vec3<f32>(1.0,0.92,0.82)*min(flux,1.5));
 }
 @fragment fn asteroid_fragment(p:AsteroidPoint)->BodyPixel{return BodyPixel(vec4<f32>(p.color,0),0.0);}
 // What the points cannot show: the far more numerous bodies and the dust they make, as a glow integrated along the ray through
@@ -1055,7 +1058,7 @@ const TRAIL_PIXELS:f32=1.1;
  let c=mix(project,target_point,end)+normal*reach/v.screen.xy*2.0;
  let kind=floor(max(p.w,0.0));let strength=fract(max(p.w,0.0));
  var tint=vec3<f32>(0.62,0.80,1.0);if kind>0.5&&kind<1.5{tint=vec3<f32>(0.62,0.86,0.72);}if kind>1.5{tint=vec3<f32>(1.0,0.76,0.36);}
- return TrailPoint(vec4<f32>(c,0,1),vec4<f32>(tint,strength),reach,length(p.xyz)/w,1.0/w);
+ return TrailPoint(vec4<f32>(c+projection_offset(),0,1),vec4<f32>(tint,strength),reach,length(p.xyz)/w,1.0/w);
 }
 @fragment fn trail_fragment(t:TrailPoint)->BodyPixel{
  let rd=ray(t.clip.xy);let far=t.far_over_z/t.over_z;
@@ -1116,7 +1119,7 @@ fn hash32(v:u32)->u32{var x=v;x^=x>>16u;x*=0x7feb352du;x^=x>>15u;x*=0x846ca68bu;
  let sun=ring_field.axes[0].xyz*ring_field.sun.x+ring_field.axes[1].xyz*ring_field.sun.y+ring_field.axes[2].xyz*ring_field.sun.z;
  // Water ice, in the ring's own tone.
  let albedo=vec3<f32>(0.97,0.95,0.91)*(0.5+band.y*0.8);
- return RockPoint(vec4<f32>(ndc,z2*min(z2/1.0e6,1.0),z2),p,vec4<f32>(radius,f32(hash32(r+1u)&1023u)/7.0,band.y,fade),c,sun,albedo,vec2<f32>(1.0e6,1.0));
+ return RockPoint(vec4<f32>(ndc+z2*projection_offset(),z2*min(z2/1.0e6,1.0),z2),p,vec4<f32>(radius,f32(hash32(r+1u)&1023u)/7.0,band.y,fade),c,sun,albedo,vec2<f32>(1.0e6,1.0));
 }
 // Rocks of an asteroid belt, around the eye, in three dimensions: synthesized, so that a belt can be seen from inside it. Real ones lie
 // millions of km apart, which is why this exists: the catalogue's own are drawn as well, at their true places. Density follows the
@@ -1147,7 +1150,7 @@ fn belt_hash(c:vec3<i32>,shell:u32)->u32{return hash32(bitcast<u32>(c.x)^hash32(
  let to_sun=-at/length(at);let sun=vec3<f32>(dot(v.icrf[0].xyz,to_sun),dot(v.icrf[1].xyz,to_sun),dot(v.icrf[2].xyz,to_sun));
  // Dark carbonaceous rock mostly, some paler stony ones: the main belt's two common kinds, as a choice by eye.
  let pale=f32((hash32(r+7u)>>4u)&1023u)/1023.0;let albedo=mix(vec3<f32>(0.20,0.18,0.16),vec3<f32>(0.42,0.37,0.31),pale*pale);
- return RockPoint(vec4<f32>(ndc,z2*min(z2/BELT_RANGE,1.0),z2),p,vec4<f32>(radius,f32(hash32(r+1u)&1023u)/7.0,1.0,fade),c,sun,albedo,vec2<f32>(BELT_RANGE,0.0));
+ return RockPoint(vec4<f32>(ndc+z2*projection_offset(),z2*min(z2/BELT_RANGE,1.0),z2),p,vec4<f32>(radius,f32(hash32(r+1u)&1023u)/7.0,1.0,fade),c,sun,albedo,vec2<f32>(BELT_RANGE,0.0));
 }
 struct RockPixel {@location(0) color:vec4<f32>,@location(1) distance:f32,@builtin(frag_depth) depth:f32}
 @fragment fn ring_rock_fragment(k:RockPoint)->RockPixel{

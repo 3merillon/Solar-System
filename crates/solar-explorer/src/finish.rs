@@ -65,7 +65,7 @@ pub struct Finish {
     made: (u32, u32, u32),
     /// The bindings that hold the scene (as the first step's source, and the finish's for each turn), with the key they were
     /// made for.
-    scene: Option<(u64, wgpu::BindGroup, [wgpu::BindGroup; 2])>,
+    scene: [Option<(u64, wgpu::BindGroup, [wgpu::BindGroup; 2])>; 2],
 }
 impl Finish {
     pub fn new(g: &Gpu) -> Self {
@@ -260,7 +260,7 @@ impl Finish {
             uniform,
             levels: Vec::new(),
             made: (0, 0, 0),
-            scene: None,
+            scene: [None, None],
         }
     }
     /// The bloom's levels in bytes, for the resource account.
@@ -321,7 +321,7 @@ impl Finish {
             self.levels.push(Level { view, group });
         }
         self.made = (width, height, count);
-        self.scene = None;
+        self.scene = [None, None];
         self.meter_groups = None;
     }
     /// `scene`: the linear HDR image, `width` by `height`; `key`: its identity, which changes whenever the view is another
@@ -383,7 +383,11 @@ impl Finish {
                 ],
             }),
         );
-        if self.scene.as_ref().is_none_or(|(k, ..)| *k != key) {
+        let scene_slot = (key & 1) as usize;
+        if self.scene[scene_slot]
+            .as_ref()
+            .is_none_or(|(k, ..)| *k != key)
+        {
             let first = self.level_group(g, scene);
             let finish = [0, 1].map(|t| {
                 g.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -413,7 +417,7 @@ impl Finish {
                     ],
                 })
             });
-            self.scene = Some((key, first, finish));
+            self.scene[scene_slot] = Some((key, first, finish));
         }
         if auto && self.meter_groups.is_none() {
             // For each turn: the texel written is that turn's, the one read is the other's.
@@ -444,7 +448,7 @@ impl Finish {
                 })
             }));
         }
-        let (_, first, finish) = self.scene.as_ref().unwrap();
+        let (_, first, finish) = self.scene[scene_slot].as_ref().unwrap();
         let draw = |encoder: &mut wgpu::CommandEncoder,
                     label,
                     pipeline: &wgpu::RenderPipeline,

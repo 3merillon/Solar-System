@@ -6,7 +6,7 @@ example:
 
 ```js
 solarExplorer.configure({shadow_diagnostic: 3})      // sun visibility: unresolved receivers
-solarExplorer.configure({cloud_diagnostic: 2})       // bypass the local cloud cache
+solarExplorer.configure({cloud_diagnostic: 128})     // compare cloud densities one metre apart
 solarExplorer.configure({debug: 1})                  // surface normals
 ```
 
@@ -50,7 +50,7 @@ they change the image.
 | Bit | Effect | Site |
 | --- | --- | --- |
 | 1 | Clouds lit by the planet's shadow only, no terrain or cloud self-shadow | `clouds.wgsl` `sampled_cloud` |
-| 2 | Bypass the local cloud cache | `cloud_cache_sample` |
+| 2 | Reserved for compatibility with saved diagnostic settings | |
 | 4 | Four times the view-march samples | `cloud_march` |
 | 8 | No refinement of long horizon bins | `cloud_march` |
 | 16 | Test output: production relative height against a rounded world-height subtraction at 32 m ray points | `cloud_pass` |
@@ -62,7 +62,7 @@ they change the image.
 | 512 | Sun visibility: skip the terrain march | `sun_visibility.wgsl` `sunlight` |
 | 1024 | Sun visibility: skip cloud shadow | same |
 | 2048 | Sun visibility: skip prop shadows. Also, in the cloud pass, outputs the view-march trace (bins, path, opaque limit minus shell entry, transmittance) | same; `cloud_pass` |
-| 4096 | Sun visibility: skip ground-cover shadows. Also, in the cloud pass, outputs the cloud-cache weight and sun-map address along the march | same; `sampled_cloud`, `cloud_pass` |
+| 4096 | Skips ground-cover shadows. The cloud pass writes zero, fine sunlight-map weight, map-edge coordinate and opacity into RGBA | `sunlight`, `sampled_cloud`, `cloud_pass` |
 | 8192 | Restores the single 104-texel hand-over between cloud shadow maps, and skips the terrain march's refinement (cost attribution) | `sun_clouds.wgsl`; `sun_terrain` |
 | 16384 | Drop the fine cloud-shadow profile map | `sun_clouds.wgsl` |
 | 32768 | Drop the fine and middle cloud-shadow profile maps | same |
@@ -123,3 +123,18 @@ the page with the music off and on and checks hidden tabs, interruptions and tri
 
 The native probe (`crates/solar-probe`) has its own pipeline override `DIAGNOSTICS` (counters
 only; [PERFORMANCE.md](PERFORMANCE.md)).
+
+
+## Flight rendering checks
+
+Run the interactive regression scripts with Node and a Chromium browser with WebGPU. Local outputs go under
+`evidence/local`. The Earth tests use the pinned pack and the replay fixture used by the existing Earth tests.
+
+| Script in `tools/` | What it measures |
+| --- | --- |
+| `Test-Cloud-Horizon.mjs`, `Test-Cloud-Stability.mjs` | A rolled cloud-bank descent against supersampling, then frame differences above and inside a stationary or evolving bank |
+| `Test-Skyline-AA.mjs`, `Test-Temporal-AA.mjs` | Ground/sky coverage and HDR edge stability, camera cuts, resize and the space renderer |
+| `Test-Water-Horizon.mjs`, `Test-Lake-Surface.mjs` | Dry ridge colours with water toggled and lake level, facing and immersion |
+| `Test-Rock-Receiver.mjs`, `Test-Rock-Streaming.mjs` | Lit-face self-shadowing and cast shadows over a rock LOD sweep, lunar reach and residency |
+| `Test-Scenery-Appearance.mjs`, `Test-Near-Terrain-Arrival.mjs` | Published building identity and first-frame near-terrain corrections |
+| `Test-Selection-Hud.mjs`, `Test-Viewport-Resize.mjs` | Click-through selection, desktop travel and viewport coverage |

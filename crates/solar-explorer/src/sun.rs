@@ -5,7 +5,7 @@ use solar_core::field::{self, V3};
 
 pub const CASCADES: usize = 6;
 /// Per cascade: tree and rock caster meshes (indexed, 5 words each), impostor cards (4 words), padding.
-pub const DRAW_WORDS: usize = CASCADES * 16;
+pub const DRAW_WORDS: usize = CASCADES * 20;
 const EXTENTS: [f64; CASCADES] = [8.0, 32.0, 96.0, 384.0, 1536.0, 6144.0];
 /// Canonical radial height clipmaps: nine levels at x4 spacing from 1 m.
 pub const HEIGHT_LEVELS: usize = 9;
@@ -70,8 +70,8 @@ pub struct Sun {
     depth_layers: Vec<wgpu::TextureView>,
     cloud_key: Vec<f64>,
     solid_key: Vec<f64>,
-    /// Sun direction of the last complete profile bake, and of the last frame.
-    baked_sun: Option<V3>,
+    /// Frames left to bring every light profile to the final sun direction.
+    sun_settle: u32,
     last_sun: Option<V3>,
     light_right: Option<V3>,
     light_sun: Option<V3>,
@@ -161,7 +161,7 @@ impl Sun {
         );
         let draws = g.buffer(
             "bounded light-space caster IDs",
-            CASCADES as u64 * 3 * u64::from(tier.sun_casters) * 4,
+            CASCADES as u64 * 4 * u64::from(tier.sun_casters) * 4,
             B::STORAGE,
         );
         let make_texture = |label, size, layers, format, usage| {
@@ -340,7 +340,17 @@ impl Sun {
                         depth_write_enabled: Some(true),
                         depth_compare: Some(wgpu::CompareFunction::LessEqual),
                         stencil: Default::default(),
-                        bias: Default::default(),
+                        // Move solid triangles one slope-scaled texel into the
+                        // map. Cap grazing slopes at half a metre of light depth.
+                        bias: if vs == "sun_mesh_vertex" {
+                            wgpu::DepthBiasState {
+                                constant: 1,
+                                slope_scale: 1.0,
+                                clamp: 0.5 / 65536.0,
+                            }
+                        } else {
+                            Default::default()
+                        },
                     }),
                     multisample: Default::default(),
                     multiview_mask: None,
@@ -423,7 +433,7 @@ impl Sun {
             depth_layers,
             cloud_key: Vec::new(),
             solid_key: Vec::new(),
-            baked_sun: None,
+            sun_settle: 0,
             last_sun: None,
             light_right: None,
             light_sun: None,
@@ -471,7 +481,6 @@ impl Sun {
         g: &Gpu,
         eye: V3,
         settings: &crate::renderer::Settings,
-        clock: crate::animation::CloudClock,
         revision: u32,
         profiling: bool,
         body: &solar_core::body::BodyDescriptor,
@@ -549,45 +558,40 @@ impl Sun {
         // Optical parameters alone decide a full rebuild. Animation (clock
         // values) refreshes an interleaved fraction of columns per frame
         // unless the renderer flagged a time jump.
-        let _ = clock;
-        // The solar clock turns the sun a little every frame (Earth: 0.004 degrees per
-        // second at rate 1). An exact sun key rebuilt every cloud profile, optical and
-        // solid, every frame. Below SUN_REBAKE_ANGLE since the last complete bake the
-        // profiles instead refresh an interleaved 1/divisor of their rows per frame (as
-        // cloud animation does), so every row follows the sun within `divisor` frames;
-        // a larger turn (a time jump, a new body) rebuilds everything as before.
-        let drift = self
-            .baked_sun
-            .map_or(f64::INFINITY, |b| field::dot(b, sun).clamp(-1., 1.).acos());
-        if drift > SUN_REBAKE_ANGLE {
-            self.baked_sun = Some(sun);
+        // Bound the angular age of the oldest tile over one refresh cycle.
+        // Continuous slow rotation never forces a periodic whole-map rebake.
+        let cycle = self.animation[1].max(1);
+        let turn = self.last_sun.map_or(f64::INFINITY, |prev| {
+            field::dot(prev, sun).clamp(-1., 1.).acos()
+        });
+        let jump = self.last_sun != Some(sun) && turn * f64::from(cycle) > SUN_REBAKE_ANGLE;
+        if jump {
+            self.sun_settle = 0;
+        } else if self.last_sun != Some(sun) {
+            self.sun_settle = cycle;
         }
-        let sun_drifting = drift <= SUN_REBAKE_ANGLE && self.last_sun != Some(sun);
+        let sun_drifting = self.sun_settle > 0;
+        self.sun_settle = self.sun_settle.saturating_sub(1);
         self.last_sun = Some(sun);
-        let baked = self.baked_sun.unwrap_or(sun);
         let key = vec![
             settings.cloud_cover,
             settings.cloud_type,
             settings.cloud_turbulence,
-            baked[0],
-            baked[1],
-            baked[2],
+            settings.profile_quality,
             settings.clouds as u32 as f64,
             settings.shadows as u32 as f64,
             revision as f64,
         ];
-        let dirty = key != self.cloud_key || self.animation[3] != 0;
+        let dirty = jump || key != self.cloud_key || self.animation[3] != 0;
         self.cloud_key = key;
         let solid_key = vec![
-            baked[0],
-            baked[1],
-            baked[2],
             settings.clouds as u32 as f64,
             settings.shadows as u32 as f64,
             revision as f64,
+            settings.profile_quality,
             solid_generation as f64,
         ];
-        let solid_dirty = solid_key != self.solid_key;
+        let solid_dirty = jump || solid_key != self.solid_key;
         self.solid_key = solid_key;
         let skin = settings.skin();
         let measured = body.surface == solar_core::body::SurfaceKind::Measured;
@@ -669,19 +673,23 @@ impl Sun {
         self.solid_key.clear();
     }
     /// Create the cloud profile programs once they have compiled.
-    pub fn complete(
+    pub(crate) fn complete(
         &mut self,
         g: &Gpu,
         frame: &wgpu::Buffer,
         weather: &wgpu::TextureView,
         cloud_sampler: &wgpu::Sampler,
+        shape: &crate::clouds::CloudShape,
     ) -> bool {
         if self.clouds_ready() {
             return false;
         }
+        let [shape_view, shape_sampler] = shape.entries();
         let entries = [
             buffer(0, frame),
             texture(46, weather),
+            shape_view,
+            shape_sampler,
             wgpu::BindGroupEntry {
                 binding: 50,
                 resource: wgpu::BindingResource::Sampler(cloud_sampler),
@@ -759,14 +767,18 @@ impl Sun {
                 20,
                 vec![(
                     self.cloud_global_pass.as_ref(),
-                    [self.tier.sun_global.div_ceil(64), self.tier.sun_global, 1],
+                    [
+                        self.tier.sun_global.div_ceil(8),
+                        self.tier.sun_global.div_ceil(8),
+                        1,
+                    ],
                 )],
             ),
             (
                 21,
                 vec![(
                     self.cloud_local_pass.as_ref(),
-                    [258u32.div_ceil(64), 258, 3],
+                    [258u32.div_ceil(8), 258u32.div_ceil(8), 3],
                 )],
             ),
             (
@@ -894,12 +906,13 @@ impl Sun {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            let base = layer as u64 * 64;
+            let base = layer as u64 * 80;
             p.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint32);
             p.set_pipeline(&self.mesh);
             p.set_bind_group(0, &self.mesh_groups[layer], &[]);
             p.draw_indexed_indirect(&self.state, base);
             p.draw_indexed_indirect(&self.state, base + 20);
+            p.draw_indexed_indirect(&self.state, base + 56);
             p.set_pipeline(&self.card);
             p.set_bind_group(0, &self.card_groups[layer], &[]);
             p.draw_indirect(&self.state, base + 40);
@@ -923,7 +936,7 @@ impl Sun {
             + (DRAW_WORDS as u64 + 4) * 4
             + self.tier.height_texels() * 16
             + self.tier.height_texels() * 16
-            + CASCADES as u64 * 3 * u64::from(self.tier.sun_casters) * 4
+            + CASCADES as u64 * 4 * u64::from(self.tier.sun_casters) * 4
             + CASCADES as u64 * u64::from(self.tier.shadow_map).pow(2) * 4
             + u64::from(self.tier.sun_global).pow(2) * 8 * 8
             + 258 * 258 * 24 * 8

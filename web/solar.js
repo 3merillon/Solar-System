@@ -33,14 +33,21 @@ const nameOf=id=>PLACES.find(p=>p[0]===id)?.[1]??'—';
 // What the eye is looking at, stated. A body's pack says what its image is and whether it has heights; these have none to read.
 const NOT_MEASURED={10:'Sun: a model, not an image. Colour from a 5772 K blackbody (IAU 2015 B3), limb darkening measured (Neckel and Labs 1994), the corona’s brightness profile Baumbach’s (1937). Granulation, the network, active regions with their spots, loops, prominences and flares are synthetic: not today’s Sun.',599:'Jupiter: Cassini map, 2000. No height: a giant has no ground. Flying in, the air closes the view.',699:'Saturn: colour by latitude is a placeholder, not a map. Ring gaps and depths are published values; their fine ringlets, and every rock up close, are synthesized. Real ring particles are mostly under 10 m, and these do not orbit.',799:'Uranus: colour by latitude is a placeholder, not a map.',899:'Neptune: colour by latitude is a placeholder, not a map.',402:'Deimos: no global map found. It is grey, and not a sphere in reality.',401:'Phobos: not a sphere in reality; this renderer draws a radial surface.',601:'Mimas: no map used yet.',701:'Ariel: no global map found.',702:'Umbriel: no global map found.',703:'Titania: no global map found.',704:'Oberon: no global map found.',705:'Miranda: no global map found.'};
 const describing=new Map();
+const descriptionsInFlight=new Map();
 // Other stars (solar-core galaxy.rs): ids 10000 + 100 k, their worlds the next ids up. Sol's bodies are system 10.
 let GALAXY=[];
 const systemOf=id=>id>=10000?Math.floor(id/100)*100:10;
 const systemName=id=>id===10?'Sol':GALAXY.find(s=>s.id===id)?.name??'—';
-async function describe(id){
- if(describing.has(id))return describing.get(id);
+function describe(id){
+ if(descriptionsInFlight.has(id))return descriptionsInFlight.get(id);
+ if(describing.has(id))return Promise.resolve(describing.get(id));
+ const pending=readDescription(id).finally(()=>descriptionsInFlight.delete(id));
+ descriptionsInFlight.set(id,pending);return pending;
+}
+async function readDescription(id){
  describing.set(id,NOT_MEASURED[id]??'');
  if(id>=10000){const s=GALAXY.find(s=>s.id===systemOf(id));let star='';try{const i=JSON.parse(SolarFlight.star_info(s.id));star=` ${i.spectral?i.spectral.value+', ':''}${Math.round(i.teff_used)} K (${i.teff_origin==='Catalogue'?i.teff.source:i.teff_origin==='SpectralClass'?'from its spectral class':'unknown: the Sun’s, as a fallback'}). Its colour and limb darkening follow from that temperature; its surface detail, when shown, is synthetic, and it has no corona model.`;}catch{}describing.set(id,s?(id===s.id?`${s.name}:${star} Distance (${s.distance} light-years) and direction are approximate catalogue values.`:`${nameOf(id)}: a synthetic world. Its surface, size and circular orbit are procedural game content, not observations; ${s.name} is ${s.distance} light-years from Sol.`):'');return describing.get(id);}
+ if(id===399)describing.set(id,'Earth’s terrain uses elevation measurements and satellite imagery. Surface detail, vegetation and weather are generated locally.');
  if(NOT_MEASURED[id]||id===399)return describing.get(id);
  try{const m=await (await fetch(`${(await packSite()).base}${packFolder(SolarFlight.body_name(id))}manifest.json`)).json();const b=m.bake||{};describing.set(id,`${nameOf(id)}: ${b.image_is}. ${b.has_height?'Heights measured.':'No global height data: all its relief is synthesized.'} Fine detail is synthesized. ${(m.attribution||[]).join(' ')}`);}catch{}
  return describing.get(id);
@@ -88,6 +95,28 @@ export async function startSolar({engine,params,canvas,$}){
  $('solar-star-view').parentElement.before($('finish-checks'));
  const show={system:slot($('solar-system')),near:slot($('solar-near')),where:slot($('solar-where')),frame:slot($('solar-frame')),note:slot($('solar-note'))};
  const select=$('solar-target');{const sol=document.createElement('optgroup');sol.label='Sol';for(const [id,name] of SOL)sol.append(new Option(name,id));select.append(sol);for(const s of GALAXY)select.append(starGroup(s,`${s.name} · ${s.distance} ly`));}
+ let landmarks=null;
+ const entry=document.createElement('section');entry.id='selection-entry';entry.hidden=true;
+ entry.setAttribute('role','status');entry.setAttribute('aria-label','Selected place');
+ const entryName=document.createElement('strong'),entryKind=document.createElement('div'),entryText=document.createElement('p');
+ entry.append(entryName,entryKind,entryText);document.body.append(entry);
+ function syncGo(){
+  const disabled=!Number(select.value)&&!landmarks?.selected;
+  for(const id of ['hud-go','touch-go']){const button=$(id);if(button)button.disabled=disabled;}
+ }
+ function showEntry(name,kind,text=''){
+  entryName.textContent=name;entryKind.textContent=kind;entryText.textContent=text;entry.hidden=false;
+ }
+ function setTarget(value){
+  const id=Number(value);select.value=String(id);landmarks?.clear();
+  syncGo();if(!id){entry.hidden=true;return;}
+  const name=nameOf(id),radius=SolarFlight.body_radius(id);
+  const kind=radius>0?`Radius ${metres(radius)}`:systemName(systemOf(id))+' system';
+  const detail=text=>text?.startsWith(name+': ')?text.slice(name.length+2):text;
+  showEntry(name,kind,detail(describing.get(id)));
+  describe(id).then(text=>{if(select.value===String(id)&&!entry.hidden)entryText.textContent=detail(text)||'';});
+ }
+ select.onchange=()=>{setTarget(select.value);select.blur();};
  // True brightness shows nothing outside the belt, so any other setting is a raised light, and says by how much.
  const syncBelt=()=>{const m=Number($('solar-belt').value);flight.set_belt_gain(m);$('solar-belt-value').textContent=m===0?'true brightness':`${group(10**(0.4*m))}× true`;$('solar-belt').title=m===0?'True brightness: real asteroids only, nearly invisible':`${group(10**(0.4*m))} times brighter than true`;};
  $('solar-belt').oninput=syncBelt;syncBelt();
@@ -127,7 +156,7 @@ export async function startSolar({engine,params,canvas,$}){
  const currentSystem=()=>systemOf(last[0]||last[1]||399);
  $('jump-cancel').onclick=()=>{cancelled=true;};
  // Esc: cancels a hyperdrive jump before it happens, or ends a trip where it is.
- window.addEventListener('keydown',e=>{if(e.code!=='Escape')return;if(jumping){e.preventDefault();cancelled=true;}else if(flight.trip_state()[0]){e.preventDefault();flight.stop_trip();}});
+ window.addEventListener('keydown',e=>{if(e.code!=='Escape')return;if(jumping){e.preventDefault();cancelled=true;}else if(flight.trip_state()[0]){e.preventDefault();flight.stop_trip();}else if(!entry.hidden){setTarget(0);}});
  async function travel(id){
   if(!id||jumping)return;
   const to=systemOf(id);
@@ -144,7 +173,7 @@ export async function startSolar({engine,params,canvas,$}){
   }finally{transit.hidden=true;jumping=false;}
  }
  const setRate=i=>{rateIndex=Math.max(1-RATES.length,Math.min(RATES.length-1,i));const r=rateOf(rateIndex);flight.set_rate(r);if(r!==0)windowSeconds=Math.max(1200,Math.abs(r)*24);syncClock(true);};
- const goEarth=name=>{const c=earthCameras.get(name);if(!c)return;flight.jump_camera(399,c.flat());world.value='399';select.value='0';destination.value=name;};
+ const goEarth=name=>{const c=earthCameras.get(name);if(!c)return;flight.jump_camera(399,c.flat());world.value='399';setTarget(0);destination.value=name;};
  destination.onchange=()=>{goEarth(destination.value);destination.blur();};
  if(params.has('view'))goEarth(params.get('view'));
  $('sun').closest('label').hidden=true;
@@ -238,13 +267,11 @@ export async function startSolar({engine,params,canvas,$}){
  $('solar-local-time').oninput=()=>setLocalTime(Number($('solar-local-time').value));
  $('solar-daylight').onclick=()=>setLocalTime(720);
  // Land at a landmark ends this high over its ground: just above it, still flying.
- const LAND_HEIGHT=30;let landmarks=null;
+ const LAND_HEIGHT=30;
  const stops=id=>Math.max(SolarFlight.body_radius(id)*(id===10?2:0.4),20000);
  // Picking a target only marks it; Face, Autopilot and Go act on it.
  // A target and an open landmark are one choice or the other: picking either drops the other, so Go and Land always mean the
  // last thing picked (owner, 16 November 2026: Go kept going to a landmark picked before a planet).
- const setTarget=v=>{select.value=String(v);if(Number(v))landmarks?.clear();};
- select.onchange=()=>{if(Number(select.value))landmarks?.clear();select.blur();};
  const target=()=>Number(select.value);
  const look=()=>{if(target())flight.look_at(target());};
  // Flying between stars would take years even at the fastest boost: another star means the hyperdrive.
@@ -260,13 +287,14 @@ export async function startSolar({engine,params,canvas,$}){
  if(touchGo){touchGo.hidden=false;touchGo.onclick=()=>{go();touchGo.blur();};}
  if(touchHud){touchHud.hidden=false;touchHud.onclick=()=>{setCollapsed(!collapsed);touchHud.blur();};}
 $('solar-look').onclick=look;$('solar-fly').onclick=fly;$('solar-stop').onclick=()=>{flight.stop_trip();flight.fly_to(0,0);flight.look_at(0);};
- $('solar-land').onclick=()=>{const l=landmarks?.selected;if(l){landAt(l);return;}const id=last[1];if(id&&id!==10){flight.fly_to(id,0);select.value='0';}};
+ $('solar-land').onclick=()=>{const l=landmarks?.selected;if(l){landAt(l);return;}const id=last[1];if(id&&id!==10){flight.fly_to(id,0);setTarget(0);}};
  $('solar-slower').onclick=()=>setRate(rateIndex-1);$('solar-faster').onclick=()=>setRate(rateIndex+1);
  $('solar-pause').onclick=()=>setRate(rateIndex===0?1:0);
  $('solar-now').onclick=()=>{flight.set_seconds(toTdb(Date.now()/1000));setRate(1);syncTime();};
  // The flight readout, in the dock: speed against the nearest body and its ground, height, thrust, and the assist and brake.
  const readout=$('hud-readout');
- readout.innerHTML=`<span title="Speed against the nearest body"><span class="hud-key">Speed</span><b id="hud-speed"></b> <span id="hud-against"></span></span><span title="Speed against the ground under the craft, turning with the body"><span class="hud-key">Ground</span><b id="hud-ground"></b></span><span title="Height over the surface of the nearest body"><span class="hud-key">Height</span><b id="hud-height"></b></span><span title="Acceleration the thrust gives now"><span class="hud-key">Thrust</span><b id="hud-thrust"></b></span><button id="hud-assist" class="hud-toggle" aria-pressed="true" title="Hover assist and approach limit (Z). Off is plain mechanics.">Assist</button><button id="hud-brake" class="hud-toggle" aria-pressed="false" title="Brake: thrust against the motion, while held (X)">Brake</button><span id="hud-state" class="small"></span>`;
+ readout.innerHTML=`<span title="Speed against the nearest body"><span class="hud-key">Speed</span><b id="hud-speed"></b> <span id="hud-against"></span></span><span title="Speed against the ground under the craft, turning with the body"><span class="hud-key">Ground</span><b id="hud-ground"></b></span><span title="Height over the surface of the nearest body"><span class="hud-key">Height</span><b id="hud-height"></b></span><span title="Acceleration the thrust gives now"><span class="hud-key">Thrust</span><b id="hud-thrust"></b></span><button type="button" id="hud-go" class="hud-toggle" title="Go to the selected planet or landmark (G)" disabled>Go</button><button id="hud-assist" class="hud-toggle" aria-pressed="true" title="Hover assist and approach limit (Z). Off is plain mechanics.">Assist</button><button id="hud-brake" class="hud-toggle" aria-pressed="false" title="Brake: thrust against the motion, while held (X)">Brake</button><span id="hud-state" class="small"></span>`;
+ const hudGo=$('hud-go');hudGo.onclick=go;syncGo();
  const hudText={speed:slot($('hud-speed')),against:slot($('hud-against')),ground:slot($('hud-ground')),height:slot($('hud-height')),thrust:slot($('hud-thrust')),state:slot($('hud-state'))};
  const syncAssist=()=>{$('hud-assist').setAttribute('aria-pressed',String(assist));$('hud-assist').textContent=assist?'Assist on':'Assist off';};syncAssist();
  $('hud-assist').onclick=()=>{assist=!assist;syncAssist();};
@@ -276,7 +304,8 @@ $('solar-look').onclick=look;$('solar-fly').onclick=fly;$('solar-stop').onclick=
  window.addEventListener('keydown',e=>{if(!forGame(e)||e.repeat)return;if(e.code==='Comma')setRate(rateIndex-1);if(e.code==='Period')setRate(rateIndex+1);if(e.code==='KeyP')setRate(rateIndex===0?1:0);if(e.code==='BracketLeft')stepBy(-1);if(e.code==='BracketRight')stepBy(1);if(e.code==='KeyZ'){assist=!assist;syncAssist();}if(e.code==='KeyT')look();if(e.code==='KeyY')fly();if(e.code==='KeyG')go();if(e.code==='KeyL'){$('solar-labels').checked=!$('solar-labels').checked;}if(e.code==='KeyO'){$('solar-trails').checked=!$('solar-trails').checked;}});
  const indicators=installPlanetIndicators({canvas,onSelect:id=>setTarget(id)});
  // Named features of the nearest body: Go there sets the craft over it, looking straight down, high enough to see it whole.
- landmarks=installLandmarks({canvas,flight,radius:id=>SolarFlight.body_radius(id),onGo:s=>goOver(s),onLand:s=>landAt(s),onShow:()=>{select.value='0';}});
+ landmarks=installLandmarks({canvas,flight,radius:id=>SolarFlight.body_radius(id),onGo:s=>goOver(s),onLand:s=>landAt(s),
+  onShow:(s,kind,origin)=>{select.value='0';syncGo();showEntry(s.name,nameOf(s.body)+' · '+kind,origin);},onClear:()=>{entry.hidden=true;syncGo();}});
  landmarks.attach(hud);hud.insertBefore($('solar-landmark'),$('solar-display-title'));
  $('solar-landmarks-on').checked=landmarks.enabled;$('solar-landmarks-on').onchange=()=>{landmarks.enabled=$('solar-landmarks-on').checked;$('solar-landmarks-on').blur();};
  window.addEventListener('keydown',e=>{if(!forGame(e)||e.repeat||e.code!=='KeyN')return;landmarks.enabled=!landmarks.enabled;$('solar-landmarks-on').checked=landmarks.enabled;});
@@ -312,7 +341,7 @@ $('solar-look').onclick=look;$('solar-fly').onclick=fly;$('solar-stop').onclick=
  function report(stats){
   const [frameBody,near,clear,relative,inFrame,drag,free,thrust,landed,hand,altitude,ground]=last;
   const seconds=flight.seconds(),span=SolarFlight.table_span();
-  syncTime();if(touchGo){const off=!target();if(touchGo.disabled!==off)touchGo.disabled=off;}
+  syncTime();
   show.system(`${systemName(systemOf(frameBody||near))} system`);
   show.near(nameOf(near));
   show.where(`${metres(clear)} above its surface`);

@@ -7,7 +7,9 @@ struct Compute {
     group: wgpu::BindGroup,
 }
 pub struct Buildings {
-    arrivals: std::collections::HashMap<[u32; 7], u32>,
+    // Road values are birth frames. Building values are one-based GPU indices
+    // in the last publication, so a reordered footprint can carry its fade.
+    history: std::collections::HashMap<[u32; 8], u32>,
     // Last validated raw source bytes, before GPU arrival stamps. Bounded by
     // FEATURES/POINTS; body changes clear them with the GPU source counts.
     source_records: Vec<u8>,
@@ -16,9 +18,11 @@ pub struct Buildings {
     pub(crate) points: wgpu::Buffer,
     refs: wgpu::Buffer,
     support: wgpu::Buffer,
+    previous_support: wgpu::Buffer,
     state: wgpu::Buffer,
     pub(crate) control: wgpu::Buffer,
     begin: Compute,
+    remap: Compute,
     generate: Compute,
     mesh: wgpu::RenderPipeline,
     mesh_group: wgpu::BindGroup,
@@ -49,7 +53,16 @@ impl Buildings {
             ((POINTS * 2 + FEATURES * 4) * 6 + 2048 * 32 * 6) * 8,
             U::STORAGE,
         );
-        let support = g.buffer("GPU building foundations", FEATURES * 16, U::STORAGE);
+        let support = g.buffer(
+            "GPU building foundations",
+            FEATURES * 16,
+            U::STORAGE | U::COPY_SRC,
+        );
+        let previous_support = g.buffer(
+            "previous building foundations",
+            FEATURES * 16,
+            U::STORAGE | U::COPY_DST,
+        );
         let state = g.buffer(
             "building indirect draw and counters",
             32,
@@ -73,7 +86,16 @@ impl Buildings {
             let mut e: Vec<_> = inputs
                 .iter()
                 .filter(|(i, _)| used.contains(i))
-                .map(|(i, b)| entry(*i, b))
+                .map(|(i, b)| {
+                    entry(
+                        *i,
+                        if key == "building_remap" && *i == 133 {
+                            &previous_support
+                        } else {
+                            b
+                        },
+                    )
+                })
                 .collect();
             e.extend(pages.entries(key));
             e
@@ -98,6 +120,7 @@ impl Buildings {
             Compute { pipeline, group }
         };
         let begin = compute("building_begin");
+        let remap = compute("building_remap");
         let generate = compute("building_generate");
         let raster = |key: &str, fragment: &str, shadow: bool| {
             let module = crate::startup::shader(g, key);
@@ -187,14 +210,16 @@ impl Buildings {
             })
             .collect();
         Self {
-            arrivals: Default::default(),
+            history: Default::default(),
             sources,
             points,
             refs,
             support,
+            previous_support,
             state,
             control,
             begin,
+            remap,
             generate,
             mesh,
             mesh_group,
@@ -266,10 +291,11 @@ impl Buildings {
         self.source_records = records.to_vec();
         self.source_points = points.to_vec();
         let mut records = records.to_vec();
-        let mut arrivals = std::collections::HashMap::new();
-        for r in records.chunks_exact_mut(112) {
+        let mut history = std::collections::HashMap::with_capacity(count as usize);
+        for (index, r) in records.chunks_exact_mut(112).enumerate() {
             // Include the low anchor words: many road spans share one 4 km
             // high-word cell and a source seed, but arrive independently.
+            let road = f32::from_bits(word(r, 108)) < 0.;
             let key = [
                 word(r, 0),
                 word(r, 4),
@@ -278,27 +304,51 @@ impl Buildings {
                 word(r, 20),
                 word(r, 24),
                 word(r, 88),
+                u32::from(road),
             ];
-            let first = *self.arrivals.get(&key).unwrap_or(&frame);
-            r[92..96].copy_from_slice(&first.to_le_bytes());
-            arrivals.insert(key, first);
+            let previous = self
+                .history
+                .get(&key)
+                .copied()
+                .unwrap_or(if road { frame } else { 0 });
+            r[92..96].copy_from_slice(&previous.to_le_bytes());
+            history.insert(key, if road { previous } else { index as u32 + 1 });
         }
-        self.arrivals = arrivals;
+        self.history = history;
         if !records.is_empty() {
             g.queue.write_buffer(&self.sources, 0, &records);
         }
         if !points.is_empty() {
             g.queue.write_buffer(&self.points, 0, points);
         }
+        let previous_count = self.count;
         self.count = count;
         self.point_count = n;
         g.queue
             .write_buffer(&self.control, 0, bytemuck::cast_slice(&[count, n, 0, 0]));
-        // The terrain-shading index needs these same persistent birth stamps.
+        if count > roads {
+            let mut encoder = g.device.create_command_encoder(&Default::default());
+            if previous_count > 0 {
+                encoder.copy_buffer_to_buffer(
+                    &self.support,
+                    0,
+                    &self.previous_support,
+                    0,
+                    u64::from(previous_count) * 16,
+                );
+            }
+            {
+                let mut pass = encoder.begin_compute_pass(&Default::default());
+                pass.set_pipeline(&self.remap.pipeline);
+                pass.set_bind_group(0, &self.remap.group, &[]);
+                pass.dispatch_workgroups(count.div_ceil(64), 1, 1);
+            }
+            g.queue.submit([encoder.finish()]);
+        }
         Ok(Some(records))
     }
     pub fn clear(&mut self, g: &Gpu) {
-        self.arrivals.clear();
+        self.history.clear();
         self.source_records.clear();
         self.source_points.clear();
         self.count = 0;
@@ -379,6 +429,7 @@ impl Buildings {
             + self.points.size()
             + self.refs.size()
             + self.support.size()
+            + self.previous_support.size()
             + self.state.size()
             + self.control.size()
             + 6 * 16

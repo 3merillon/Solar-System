@@ -227,21 +227,49 @@ fn sc_radial_height(p:vec3<f32>)->f32{let radius=f.planet.x+f.eye_hi.w;let radia
 fn sc_cell_hash(face:u32,x:u32,y:u32)->u32{return hash(x^hash(y^hash(face^bitcast<u32>(f.geo.z)^0x53540001u)));}
 fn sc_face_project(face:u32,p:vec3<f32>)->vec3<f32>{switch face{case 0u:{return vec3<f32>(-p.z,p.y,p.x);}case 1u:{return vec3<f32>(p.z,p.y,-p.x);}case 2u:{return vec3<f32>(p.x,-p.z,p.y);}case 3u:{return vec3<f32>(p.x,p.z,-p.y);}case 4u:{return vec3<f32>(p.x,p.y,p.z);}default:{return vec3<f32>(-p.x,p.y,-p.z);}}}
 
-fn sc_window_weight(key:vec3<u32>)->f32 {
- let eye=f.eye_hi.xyz+f.eye_lo.xyz;let chart=sc_face_project(key.x,eye);if chart.z<length(eye)*0.45{return 0.0;}
+// One fixed candidate per 2x2 block owns a slot on the opposite cube face.
+// Both poles of an axis cannot face the camera together. This extends the
+// outer population to twice the radius with the existing allocation, and its
+// owners keep the exact same slots when they enter the dense near window.
+fn sc_outer_offset(face:u32,block:vec2<i32>)->vec2<i32>{
+ let h=hash(u32(block.x)^u32(block.y)*0x9e3779b9u^face);
+ return vec2<i32>(i32(h&1u),i32((h>>1u)&1u));
+}
+fn sc_outer_cell(face:u32,c:vec2<i32>)->bool{return all((c&vec2<i32>(1))==sc_outer_offset(face,c/2));}
+fn sc_cell_slot(face:u32,c:vec2<i32>)->u32{
+ let outer=sc_outer_cell(face,c);let residue=select(c,c/2,outer)%vec2<i32>(sc_side());
+ return (face^u32(outer))*sc_face_cap()+u32(residue.y)*u32(sc_side())+u32(residue.x);
+}
+fn sc_window_weights(key:vec3<u32>)->vec2<f32> {
+ let eye=f.eye_hi.xyz+f.eye_lo.xyz;let chart=sc_face_project(key.x,eye);if chart.z<length(eye)*0.45{return vec2<f32>(0);}
  let center=(chart.xy/chart.z*0.5+0.5)*524288.0;
  let ring=max(abs(f32(key.y)-center.x),abs(f32(key.z)-center.y));
- let side=f32(f.tier_a.z);return 1.0-smoothstep(side/3.0,side*11.0/24.0,ring);
+ let ring_fraction=vec2<f32>(ring,ring*.5)/f32(sc_side());
+ return vec2<f32>(1)-smoothstep(vec2<f32>(.40),vec2<f32>(.48),ring_fraction);
+}
+fn sc_window_weight(key:vec3<u32>)->f32{
+ let weights=sc_window_weights(key);return select(weights.x,weights.y,sc_outer_cell(key.x,vec2<i32>(key.yz)));
+}
+fn sc_projected_pixels(metres:f32,distance:f32)->f32{
+ return metres*f.view.y/(2.0*f.view.w*max(1.0,distance));
+}
+fn sc_prop_pixels(s:ScInstance,distance:f32)->f32{
+ return sc_projected_pixels(s.shape.x*select(1.4,1.0,u32(s.hi.w)==1u),distance);
+}
+fn sc_pixel_weight(pixels:f32)->f32{return smoothstep(0.38,1.45,pixels);}
+// Use the distance envelope to choose whole objects. Each cell has a stable
+// threshold so the population thins gradually without leaving holes in a prop.
+fn sc_admitted(weight:f32,seed:u32)->bool{return weight>0.04+0.92*sc_random(seed);}
+fn sc_fade_toward(value:f32,goal:f32,seconds:f32)->f32{
+ let step=max(0.0,f.forward.w)/seconds;return value+clamp(goal-value,-step,step);
 }
 // Size in screen pixels, shared by visible rocks and their light-space casters.
 // Fade the smallest stones before raster coverage becomes a blinking pixel.
 fn sc_rock_pixel_weight(radius:f32,distance:f32)->f32{
- let pixels=radius*1.4*f.view.y/(max(1.0,distance)*2.0*f.view.w);
- return smoothstep(0.6,2.4,pixels);
+ return sc_pixel_weight(2.0*sc_projected_pixels(radius*1.4,distance));
 }
 fn sc_visibility(s:ScInstance)->f32{
- let root=(s.hi.xyz-f.eye_hi.xyz)+(s.lo.xyz-f.eye_lo.xyz)-f.eye_tail.xyz;
- return sc_window_weight(s.key.xyz)*s.contact.w*select(sc_rock_pixel_weight(s.shape.x,length(root)),1.0,u32(s.hi.w)==1u);
+ return smoothstep(0.0005,1.0,s.contact.w);
 }
 fn sc_ds_div(a:vec2<f32>,b:vec2<f32>)->vec2<f32>{let q=rounded(a.x/b.x);let r=ds_add(a,-ds_mul(b,vec2<f32>(q,0)));return ds_add(vec2<f32>(q,0),vec2<f32>(r.x/b.x,0));}
 // Crown radius in metres of a tree of this species and height (its envelope at the widest).
@@ -278,13 +306,13 @@ fn sc_projected_cover(p:vec3<f32>,height:f32,slope:f32,footprint:f32,rd:vec3<f32
    let delta=(vec2<f32>(f32(x),f32(y))+vec2<f32>(jitter)/1024.0-fraction)*metres;
    let projected=vec3<f32>(delta,0);let chart_up=normalize(vec3<f32>(uv,1));let tangent=(projected-chart_up*dot(projected,chart_up))/sqrt(1.0+dot(uv,uv));
    var separation=length(tangent);var kind=0u;var radius=0.0;var presence=0.0;
-   let side=sc_side();let slot=face*sc_face_cap()+u32(c.y%side)*u32(side)+u32(c.x%side);let object=sc_objects[slot];
+   let object=sc_objects[sc_cell_slot(face,c)];
    let valid=all(object.key.xyz==vec3<u32>(face,vec2<u32>(c)))&&sc_record_current(object.key.w)&&object.identity.w==bitcast<u32>(f.geo.z);
    if valid {
     kind=u32(object.hi.w);let variant=u32(object.shape.z);let tv=SC_SPECIES*max(1u,min(3u,f.tier_d.y));
     radius=select(object.shape.x,sc_crown_metres(min(variant/max(1u,min(3u,f.tier_d.y)),SC_SPECIES-1u),object.shape.x),kind==1u&&variant<tv);
     let displacement=(object.hi.xyz-f.eye_hi.xyz)+(object.lo.xyz-radial*object.lo.w-base);separation=length(displacement-radial*dot(displacement,radial));
-    presence=select(sc_window_weight(object.key.xyz)*object.contact.w,0.0,fallback);
+    presence=select(sc_visibility(object),0.0,fallback);
    }else{
     let chance=sc_random(seed+2u);
     if chance<e.trees*area*0.72{kind=1u;let sp=sc_pick_species(e,seed);radius=sc_crown_metres(sp,sc_species_base(sp).height*(0.82+0.36*sc_random(seed+4u)));}
@@ -322,7 +350,7 @@ fn sc_rock_sun_cover(p:vec3<f32>,normal:vec3<f32>,footprint:f32)->f32{
  let address=surface_address(p);let pos=page_pos(address.hi,address.lo);let slope=clamp(dot(normal,radial),0.0,1.0);
  let e=sc_eco(address.hi,address.lo,sc_radial_height(p),slope);let steep=1.0-smoothstep(0.75,0.95,slope);
  let uv=pos.uv;let area=pow(1.0+dot(uv,uv),-1.5);let cell_area=pow(f.planet.x/262144.0,2.0)*area;
- let cell=vec2<u32>(pos.g>>vec2<u32>(9u));let window=sc_window_weight(vec3<u32>(pos.face,cell));
+ let cell=vec2<u32>(pos.g>>vec2<u32>(9u));let windows=sc_window_weights(vec3<u32>(pos.face,cell));let window=mix(windows.x,windows.y,.25);
  let distance=length(p);var optical=0.0;
  let ice=f.solar.w>2.5;let dusty=f.solar.w>1.5&&!ice;
  let b=mix(2.5,3.5,e.ejecta);let c1=select(0.0015,0.0006,ice)+0.06*e.ejecta*e.ejecta+0.012*steep;

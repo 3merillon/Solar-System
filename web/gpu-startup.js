@@ -9,7 +9,7 @@
 // programs have compiled (solarPipelineReady). The renderer's Rust side lists
 // the same programs as lazily created; a program deferred here but created
 // eagerly there fails startup loudly instead of compiling twice.
-const DEFERRED=new Set(['shade','water','ocean_vertex','ocean_cap_vertex','water_mesh_vertex','water_mesh_cap_vertex','cloud_pass','cloud_far_pass','cloud_local_generate','scenery_cull','scenery_refresh','scenery_cover_place','scenery_shade','sun_cloud_local_generate','sun_cloud_global_generate']);
+const DEFERRED=new Set(['shade','water','ocean_vertex','ocean_cap_vertex','water_mesh_vertex','water_mesh_cap_vertex','cloud_pass','cloud_far_pass','scenery_cull','scenery_refresh','scenery_cover_place','scenery_shade','sun_cloud_local_generate','sun_cloud_global_generate']);
 // The longest deferred programs start at once in lanes of their own on
 // machines with twelve or more threads, so they finish close to the first image.
 const HEAVY=['water','shade','cloud_pass'];
@@ -113,7 +113,11 @@ export function descriptorFor(p,module,canvasFormat){
  const stage=entryPoint=>({module,entryPoint});
  if(p.compute)return {label:p.key,layout:'auto',compute:stage(p.compute)};
  const descriptor={label:p.key,layout:'auto',vertex:{...stage(p.vertex),buffers:[]},fragment:{...stage(p.fragment),targets:p.formats.map(format=>({format:format==='canvas'?canvasFormat:format,writeMask:15}))},primitive:{topology:'triangle-list',frontFace:'ccw',cullMode:p.cull??'none',unclippedDepth:false},multisample:{count:1,mask:0xffffffff,alphaToCoverageEnabled:false}};
- if(p.compare){const stencil={compare:'always',depthFailOp:'keep',failOp:'keep',passOp:'keep'};descriptor.depthStencil={format:'depth32float',depthCompare:p.compare,depthWriteEnabled:true,depthBias:p.key==='building_shadow'?2:0,depthBiasClamp:0,depthBiasSlopeScale:p.key==='building_shadow'?2:0,stencilBack:stencil,stencilFront:stencil,stencilReadMask:0,stencilWriteMask:0};}
+ if(p.compare){
+  const stencil={compare:'always',depthFailOp:'keep',failOp:'keep',passOp:'keep'};
+  const mesh=p.vertex==='sun_mesh_vertex',bias=mesh?1:p.key==='building_shadow'?2:0;
+  descriptor.depthStencil={format:'depth32float',depthCompare:p.compare,depthWriteEnabled:true,depthBias:bias,depthBiasClamp:mesh ? 0.5/65536 : 0,depthBiasSlopeScale:bias,stencilBack:stencil,stencilFront:stencil,stencilReadMask:0,stencilWriteMask:0};
+ }
  return descriptor;
 }
 function canonical(value,ids){

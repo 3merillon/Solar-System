@@ -165,7 +165,15 @@ fn gpu_scores(@builtin(global_invocation_id) id:vec3<u32>){if id.x>=NODE_CAP{ret
  let delta=(center-radial)*f.planet.x-radial*(f.eye_hi.w-terrain.camera_height);
  let grazing=1.0-abs(dot(normalize(delta),center));error*=1.0+3.0*pow(grazing,4.0);
  error*=f.lod.y;
- if altitude<300.0*f.lod.y&&horizontal<300.0*f.lod.y{let spacing=f.planet.x*0.125*size;let desired=0.10+(horizontal*0.014+altitude*0.003)/f.lod.y;error=max(error,f.lod.w*spacing/desired);}
+ // Prepare the ground around the predicted eye with the same spacing rule as
+ // the current eye. A short lead covers several publications even at walking speed.
+ let future_h=future_horizontal+length(tangent)*0.08;
+ let near_metric=min(horizontal*0.014+altitude*0.003,future_h*0.014+future_altitude*0.003);
+ if min(current_distance,length(vec2<f32>(future_h,future_altitude)))<420.0*f.lod.y{
+  let spacing=f.planet.x*0.125*size;
+  let desired=0.10+max(0.0,near_metric/f.lod.y-0.04);
+  error=max(error,f.lod.w*spacing/desired);
+ }
  terrain.nodes[id.x].score=error;
  if field_measured()&&n.ready!=0u&&(n.ready>>8u)!=node_served(id.x){terrain.nodes[id.x].flags|=128u;}
 }
@@ -178,12 +186,22 @@ fn gpu_census(@builtin(global_invocation_id) id:vec3<u32>){if id.x>=NODE_CAP||te
 @compute @workgroup_size(64)
 fn gpu_reset_progress(@builtin(global_invocation_id) id:vec3<u32>){if id.x<NODE_CAP&&terrain.phase==0u{atomicStore(&terrain.unsettled[id.x],0u);atomicStore(&terrain.leaf_counts[id.x],0u);}}
 var<workgroup> progress_flags:array<u32,64>;
+fn terrain_motion_weight(origin:vec3<f32>,end:vec3<f32>)->f32{
+ let relative_end=(origin-f.eye_hi.xyz)+(end-f.eye_lo.xyz)-f.eye_tail.xyz;
+ return smoothstep(TERRAIN_SOLID_RANGE,3.0*TERRAIN_SOLID_RANGE,length(relative_end));
+}
+fn parked_morph(m:Morph)->Morph{
+ return Morph(m.key,vec4<f32>(m.hi.xyz,clock_now()-1.0),m.b,m.b,m.nb,m.nb,vec4<f32>(0,0,0,0.14));
+}
+fn reuse_morph(m:Morph)->Morph{
+ if terrain_motion_weight(m.hi.xyz,m.b.xyz)==0.0{return parked_morph(m);}return m;
+}
 @compute @workgroup_size(64)
 fn gpu_progress(@builtin(local_invocation_index) lane:u32,@builtin(workgroup_id) group:vec3<u32>){var pending=0u;for(var i=lane;i<SAMPLES;i+=64u){let slot=vertex_map[terrain.active_bank*f.tier_a.y*SAMPLES+group.x*SAMPLES+i];if morph_phase(read_morph(slot),clock_now())<1.0{pending=1u;}}progress_flags[lane]=pending;workgroupBarrier();for(var step=32u;step>0u;step>>=1u){if lane<step{progress_flags[lane]|=progress_flags[lane+step];}workgroupBarrier();}if lane==0u{atomicStore(&terrain.unsettled[terrain.published_nodes[group.x]],progress_flags[0]);}}
 // Separate pass: only the owning invocation reads/writes each trajectory. This
 // retires finished motion before the clock wraps, without racing other readers.
 @compute @workgroup_size(64)
-fn gpu_park(@builtin(global_invocation_id) id:vec3<u32>){if id.x>=terrain.reserved[1].w*SAMPLES{return;}let slot=vertex_map[terrain.active_bank*f.tier_a.y*SAMPLES+id.x];if atomicLoad(&vertex_owners[slot])!=id.x+1u{return;}var m=read_morph(slot);if morph_phase(m,clock_now())>=1.0{m.a=m.b;m.na=m.nb;m.velocity=vec4<f32>(0,0,0,0.14);m.hi.w=clock_now()-0.14;write_morph(slot,m);}}
+fn gpu_park(@builtin(global_invocation_id) id:vec3<u32>){if id.x>=terrain.reserved[1].w*SAMPLES{return;}let slot=vertex_map[terrain.active_bank*f.tier_a.y*SAMPLES+id.x];if atomicLoad(&vertex_owners[slot])!=id.x+1u{return;}let m=read_morph(slot);if morph_phase(m,clock_now())>=1.0||terrain_motion_weight(m.hi.xyz,m.b.xyz)==0.0{write_morph(slot,parked_morph(m));}}
 @compute @workgroup_size(64)
 fn gpu_mark_progress(@builtin(global_invocation_id) id:vec3<u32>){if id.x>=NODE_CAP||terrain.phase!=0u||(terrain.nodes[id.x].flags&16u)==0u||atomicLoad(&terrain.unsettled[id.x])==0u{return;}var p=terrain.nodes[id.x].parent;for(var j=0u;j<=MAX_LEVEL;j++){if p==NONE{break;}atomicStore(&terrain.unsettled[p],1u);p=terrain.nodes[p].parent;}}
 // In motion a cut keeps a band between its thresholds, so that it does not thrash, and spends patches on what it meets first. So where it ends up depends on
@@ -342,15 +360,17 @@ fn gpu_select(@builtin(local_invocation_index) lane:u32){
   // Measured pages: nodes whose serving page changed re-enter generation under the existing
   // job limits, leaves first, and retarget through their trajectories. Bit 64 keeps the
   // publication from reusing their old trajectories; gpu_bounds_finish clears it.
-  // Serial order: round 0 takes leaves, round 1 any node, each in index order, 32 in all.
+  // Refresh the displayed landing site before distant leaves or cached parents.
   if lane==0u{atomicStore(&sel_or,0u);}
   var refreshed=false;
   if field_measured()&&(run&2u)!=0u{
    var budget=32u;
-   for(var round=0u;round<2u;round++){
+   for(var round=0u;round<3u;round++){
     var base=0u;let tail=terrain.queue_tail;let room=min(budget,select(0u,256u-tail,tail<256u));
     for(var c=0u;c<NODE_CAP;c+=SEL_LANES){
-     let i=c+lane;let flags=terrain.nodes[i].flags;let want=(flags&129u)==129u&&(round==1u||(flags&4u)!=0u);
+     let i=c+lane;let flags=terrain.nodes[i].flags;var want=(flags&129u)==129u&&(round==2u||(flags&4u)!=0u);
+     if want&&round==0u{let bounds=terrain.cache_bounds[i];let eye=f.eye_hi.xyz+f.eye_lo.xyz;
+      want=distance(eye,clamp(eye,bounds.minimum.xyz,bounds.maximum.xyz))<3.0*TERRAIN_SOLID_RANGE;}
      let at=sel_prefix(lane,select(0u,1u,want));
      if want&&base+at<=room{terrain.nodes[i].flags=(flags&~128u)|64u;terrain.queue[tail+base+at-1u]=i;}
      base+=sel_total;workgroupBarrier();
@@ -536,11 +556,15 @@ fn gpu_morph_vertices(@builtin(global_invocation_id) id:vec3<u32>){if id.x>=terr
  // coincident keys can still find a coarser trajectory in the old vertex map.
  // Reusing that trajectory would leave stale coarse heights in a refined patch.
  // On a measured body a leaf with a coarser neighbour blends toward its parent, which reads another page and can change alone, so it recomputes and the compare below keeps what did not move.
- if terrain.epochs>0u&&(terrain.nodes[node].flags&102u)==38u&&terrain.nodes[node].pad==u32(terrain.nodes[node].padding.z)&&(!field_measured()||u32(terrain.nodes[node].padding.z)==0u)&&all(xy>vec2<u32>(0))&&all(xy<vec2<u32>(16)){let old=lookup_morph(key);if old!=NONE{write_morph(slot,read_morph(old));return;}}
+ if terrain.epochs>0u&&(terrain.nodes[node].flags&102u)==38u&&terrain.nodes[node].pad==u32(terrain.nodes[node].padding.z)&&(!field_measured()||u32(terrain.nodes[node].padding.z)==0u)&&all(xy>vec2<u32>(0))&&all(xy<vec2<u32>(16)){let old=lookup_morph(key);if old!=NONE{write_morph(slot,reuse_morph(read_morph(old)));return;}}
  let origin=base_position(key).hi.xyz;let goal=basis_for(key,1u);var end=vec4<f32>(0);var nb=vec4<f32>(0);var water=WATER_NONE;var water_sum=0.0;var water_weight=0.0;var excess=false;
  // Levels average as levels. Excess-coded samples convert at their own height and the result codes back as an excess over this vertex.
  for(var i=0u;i<3u;i++){if goal.weights[i]==0.0{continue;}let sample=target_sample(goal.ids[i]);if sample.normal.w>WATER_NONE{water_sum+=vertex_water_decode(sample.normal.w,sample.lo.w)*goal.weights[i];water_weight+=goal.weights[i];excess=excess||sample.normal.w>WATER_EXCESS_SPLIT;}end+=vec4<f32>((sample.hi.xyz-origin)+sample.lo.xyz,sample.lo.w)*goal.weights[i];nb+=vec4<f32>(sample.normal.xyz,sample.hi.w)*goal.weights[i];}nb=vec4<f32>(normalize(nb.xyz),nb.w);
  if water_weight>0.0{water=water_sum/water_weight;if excess{water=WATER_EXCESS_FLAG+(water-end.w);}}
+ let motion=terrain_motion_weight(origin,end.xyz);
+ if motion==0.0{
+  write_morph(slot,Morph(vec4<i32>(key,bitcast<i32>(water)),vec4<f32>(origin,clock_now()-1.0),end,end,nb,nb,vec4<f32>(0,0,0,0.14)));return;
+ }
  var start=end;var na=nb;var velocity=vec3<f32>(0);let duration=0.14;var birth=clock_now()-duration;
  if terrain.epochs>0u{
   let old_slot=lookup_morph(key);
@@ -558,6 +582,7 @@ fn gpu_morph_vertices(@builtin(global_invocation_id) id:vec3<u32>){if id.x>=terr
  // New data can move a vertex tens of metres, which is a jump in the usual morph time. On a measured body
  // a morph takes time in proportion to how far it goes, and the shading's fade in runs alongside it.
  var span=duration;if field_measured(){span=clamp(length(delta)/60.0,duration,0.6);}
+ span=max(0.001,span*motion);
  velocity=sign(delta)*clamp(velocity*sign(delta),vec3<f32>(0),abs(delta)*(3.0/span));
  write_morph(slot,Morph(vec4<i32>(key,bitcast<i32>(water)),vec4<f32>(origin,birth),start,end,na,nb,vec4<f32>(velocity,span)));
 }

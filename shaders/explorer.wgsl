@@ -1,4 +1,4 @@
-// Single radial skin. No interval tracing, CSG, skirts, or temporal terrain AA.
+// Single radial terrain surface. Scene antialiasing runs after the HDR composite.
 struct Frame {
  eye_hi:vec4<f32>, eye_lo:vec4<f32>, right:vec4<f32>, up:vec4<f32>, forward:vec4<f32>,
  sun:vec4<f32>, view:vec4<f32>, planet:vec4<f32>, options:vec4<f32>, lod:vec4<f32>, geo:vec4<f32>,
@@ -10,7 +10,7 @@ struct Frame {
  quality:vec4<f32>, // aerial perspective steps, wave bands, screen-space water reflections, relief refinement steps
  // Allocation tier, fixed for the renderer's lifetime (see crates/solar-explorer/src/tier.rs).
  tier_a:vec4<u32>, // vertex hash capacity per bank (power of two), union patch cap, scenery window side, caster IDs per stream
- tier_b:vec4<u32>, // prop shadow map size, global profile map size, height clipmap size, cloud volume size
+ tier_b:vec4<u32>, // prop shadow map size, global profile map size, height clipmap size, reserved
  tier_c:vec4<u32>, // weather face size, atlas cell pixels, wave cache base size, index capacity per bank
  tier_d:vec4<u32>, // node capacity; w: startup placeholder flags (bit 0: sea programs pending)
  // The body descriptor (crates/solar-core/src/body.rs).
@@ -27,6 +27,7 @@ struct Frame {
  sky_high:vec4<f32>, // the sky at the zenith
  cover:vec4<f32>, // ground cover: on, reach (m), density, unused
  starlight:vec4<f32>, // the colour of the system star's light against the Sun's (crates/solar-core/src/stars.rs), 1 for Sol
+ temporal:vec4<f32>,
 }
 struct Sample { hi:vec4<f32>,lo:vec4<f32>,normal:vec4<f32> }
 // A shared vertex owns its complete trajectory. Retargeting samples the old
@@ -115,9 +116,14 @@ fn morph_sample(m:Morph,clock:f32)->Sample{
 }
 fn morph_velocity(m:Morph,clock:f32)->vec3<f32>{let t=morph_phase(m,clock);return (m.b.xyz-m.a.xyz)*6.0*t*(1.0-t)/max(0.0001,m.velocity.w)+m.velocity.xyz*(1.0-4.0*t+3.0*t*t);}
 fn raster_morph(id:u32)->Morph{if id<f.tier_a.x{return morphs[id];}return morphs_b[id-f.tier_a.x];}
+fn camera_clip(p:vec3<f32>)->vec4<f32>{
+ let z=dot(p,f.forward.xyz);
+ let xy=vec2<f32>(dot(p,f.right.xyz)/(f.view.z*f.view.w),dot(p,f.up.xyz)/f.view.w);
+ return vec4<f32>(xy+vec2<f32>(-2,2)*f.temporal.xy/f.view.xy*z,0.1,z);
+}
 @vertex fn terrain_vertex(@builtin(vertex_index) id:u32)->Surface {
  let s=morph_sample(raster_morph(id),f.lod.x);let p=relative(s);let z=dot(p,f.forward.xyz);
- let clip=vec4<f32>(dot(p,f.right.xyz)/(f.view.z*f.view.w),dot(p,f.up.xyz)/f.view.w,0.1,z);
+ let clip=camera_clip(p);
  return Surface(clip,vec4<f32>(p,s.lo.w),vec4<f32>(s.normal.xyz,log2(max(0.0001,s.hi.w))));
 }
 struct Gbuffer {@location(0) position:vec4<f32>,@location(1) normal:vec4<f32>,@builtin(frag_depth) depth:f32}
@@ -153,7 +159,7 @@ fn vertex_water_level(m:Morph,s:Sample,id:u32)->f32{
  var sum=0.0;var count=0.0;
  for(var i=0u;i<3u;i++){let other=raster_morph(ocean_indices[id-id%3u+i]);let h=bitcast<f32>(other.key.w);if h>WATER_NONE{sum+=vertex_water_decode(h,morph_sample(other,f.lod.x).lo.w);count+=1.0;}}
  if count>0.0{return sum/count;}
- return min(f.planet.y-80.0,s.lo.w-80.0);
+ return WATER_NONE;
 }
 // Lakes have shorter fetch than the sea, so smaller waves. Near sea level this is the sea, unchanged.
 fn water_wave_scale(level:f32)->f32{if !field_measured(){return 1.0;}return 1.0-0.8*smoothstep(8.0,20.0,abs(level-f.planet.y));}
@@ -167,7 +173,11 @@ fn water_near_sea(above_sea:f32)->bool{if !field_measured(){return true;}return 
 // A level cell reaches past a dam or an outlet, over ground far below the deepest bed a lake is given. Water under sea level is a lake in a basin or a
 // triangle sinking under a shore, and neither hangs over anything; the Caspian has real depths of its own.
 fn water_held_up(above_sea:f32,clearance:f32)->bool{return field_measured()&&above_sea>=8.0&&clearance>LAKE_DEEPEST;}
-fn ocean_surface(id:u32)->Surface{let m=raster_morph(ocean_indices[id]);let s=morph_sample(m,f.lod.x);let n=normalize(s.hi.xyz+s.lo.xyz);let level=vertex_water_level(m,s,id);let wave=sea_wave(s.hi.xyz,s.lo.xyz-n*s.lo.w,max(0.02,s.hi.w))*water_wave_scale(level)*water_wave_on_ground(level-s.lo.w);let p=relative(s)+n*(level-s.lo.w)+n*wave.w;return Surface(vec4<f32>(dot(p,f.right.xyz)/(f.view.z*f.view.w),dot(p,f.up.xyz)/f.view.w,0.1,dot(p,f.forward.xyz)),vec4<f32>(p,level+wave.w-s.lo.w),vec4<f32>(level-f.planet.y,0,0,s.hi.w));}
+fn ocean_surface(id:u32)->Surface{let m=raster_morph(ocean_indices[id]);let s=morph_sample(m,f.lod.x);let n=normalize(s.hi.xyz+s.lo.xyz);let level=vertex_water_level(m,s,id);
+ // The draw list admits whole coastal patches. A triangle with three dry
+ // vertices has no lake or sea level and must not create a depth-writing shell.
+ if level<=WATER_NONE{return Surface(vec4<f32>(0,0,2,1),vec4<f32>(0),vec4<f32>(0));}
+ let wave=sea_wave(s.hi.xyz,s.lo.xyz-n*s.lo.w,max(0.02,s.hi.w))*water_wave_scale(level)*water_wave_on_ground(level-s.lo.w);let p=relative(s)+n*(level-s.lo.w)+n*wave.w;return Surface(camera_clip(p),vec4<f32>(p,level+wave.w-s.lo.w),vec4<f32>(level-f.planet.y,0,0,s.hi.w));}
 @vertex fn ocean_vertex(@builtin(vertex_index) id:u32)->Surface{return ocean_surface(id);}
 // Interpolate bed clearance from the SAME published vertices and morph as land.
 // The second channel carries this metric depth, not mesh spacing.
@@ -214,7 +224,7 @@ struct OceanFragment {@location(0) ocean:vec2<f32>,@builtin(frag_depth) depth:f3
      let h=sc_radial_height(p);let base=f.eye_lo.xyz+p-radial*h;
      let ground=surface_height_only(p,1.0);
      let wave=sea_wave(f.eye_hi.xyz,base,max(0.4,length(p)*f.view.w/f.view.y)).w*water_wave_scale(level)*water_wave_on_ground(level-ground);
-     let hit=sphere(rd,level+wave);let distance=select(hit.y,hit.x,hit.x>0.0);
+     let hit=sphere(rd,level+wave);let distance=select(hit.x,hit.y,f.eye_hi.w<level+wave);
      if distance<=0.0{discard;}p=rd*distance;
      let q=page_pos(f.eye_hi.xyz,f.eye_lo.xyz+f.eye_tail.xyz+p);
      let e=measured_water_entry(q,max(0.4,length(p)*f.view.w/f.view.y*.25));let we=water_layer_entry(e,q.face,q.g);
@@ -391,7 +401,7 @@ fn water_mesh_surface(id:u32)->Surface{
  let odd=vec2<i32>(ij.x&1,ij.y&1);
  if alpha>0.0&&any(odd!=vec2<i32>(0)){let other=water_mesh_point(face,key-odd*step,morph_step,probe.level);point.p=mix(point.p,other.p,alpha);point.level=mix(point.level,other.level,alpha);point.clearance=mix(point.clearance,other.clearance,alpha);}
  let p=point.p;
- return Surface(vec4<f32>(dot(p,f.right.xyz)/(f.view.z*f.view.w),dot(p,f.up.xyz)/f.view.w,0.1,dot(p,f.forward.xyz)),vec4<f32>(p,point.clearance),vec4<f32>(point.level-f.planet.y,1.0,0,spacing));
+ return Surface(camera_clip(p),vec4<f32>(p,point.clearance),vec4<f32>(point.level-f.planet.y,1.0,0,spacing));
 }
 @vertex fn water_mesh_vertex(@builtin(vertex_index) id:u32)->Surface{return water_mesh_surface(id);}
 @vertex fn water_mesh_cap_vertex(@builtin(vertex_index) id:u32)->Surface{var s=water_mesh_surface(id);s.clip.z=(0.1/0.0999)*(s.clip.w-0.0001);return s;}
@@ -419,12 +429,18 @@ fn water_mesh_surface(id:u32)->Surface{
 @group(0) @binding(120) var space_color:texture_2d<f32>;
 @group(0) @binding(121) var space_distance:texture_2d<f32>;
 @group(0) @binding(122) var space_active:texture_2d<f32>;
-fn ray(pixel:vec2<f32>)->vec3<f32> {let uv=pixel/f.view.xy*2.0-1.0;return normalize(f.forward.xyz+f.right.xyz*uv.x*f.view.z*f.view.w-f.up.xyz*uv.y*f.view.w);}
-fn sphere(rd:vec3<f32>,height:f32)->vec2<f32>{let b=dot(f.eye_hi.xyz+f.eye_lo.xyz,rd);let c=(f.eye_hi.w-height)*(2.0*f.planet.x+f.eye_hi.w+height);let det=b*b-c;if det<0.0{return vec2<f32>(-1.0);}let s=sqrt(det);let far=-b+select(-s,s,b<0.0);let near=c/far;return vec2<f32>(min(near,far),max(near,far));}
+fn view_ray(pixel:vec2<f32>)->vec3<f32> {let uv=pixel/f.view.xy*2.0-1.0;return normalize(f.forward.xyz+f.right.xyz*uv.x*f.view.z*f.view.w-f.up.xyz*uv.y*f.view.w);}
+fn ray(pixel:vec2<f32>)->vec3<f32>{return view_ray(pixel+f.temporal.xy);}
+fn sphere(rd:vec3<f32>,height:f32)->vec2<f32>{let b=dot(f.eye_hi.xyz+f.eye_lo.xyz,rd);let c=(f.eye_hi.w-height)*(2.0*f.planet.x+f.eye_hi.w+height);let det=b*b-c;if det<0.0{return vec2<f32>(-1.0);}let s=sqrt(det);if s==0.0{return vec2<f32>(-b);}let far=-b+select(-s,s,b<0.0);let near=c/far;return vec2<f32>(min(near,far),max(near,far));}
 fn sea_distance(rd:vec3<f32>)->f32 {let r=sphere(rd,f.planet.y);if r.x>0.0{return r.x;}if r.y>0.0&&f.eye_hi.w<f.planet.y{return r.y;}return 1e12;}
 fn ground_distance(pixel:vec2<i32>)->f32{let p=textureLoad(positions,pixel,0);if dot(p.xyz,p.xyz)<0.01{return 1e12;}return length(p.xyz);}
 fn raster_sea(pixel:vec2<i32>)->f32{let t=abs(textureLoad(ocean_depth,pixel,0).r);return select(1e12,t,t>0.0);}
-fn limit_distance(pixel:vec2<i32>,rd:vec3<f32>)->f32{let ground=ground_distance(pixel);if f.options.z>0.5{return min(ground,raster_sea(pixel));}return ground;}
+fn visible_limit(pixel:vec2<i32>,medium:f32)->f32{
+ let ground=ground_distance(pixel);
+ // An air ray carries 1 + accepted interface coverage. Rejected proxies
+ // leave the sky and aerial perspective at their actual opaque depth.
+ if f.options.z>0.5&&(medium>1.0||medium<0.5){return min(ground,raster_sea(pixel));}return ground;
+}
 fn daylight(radial:vec3<f32>)->f32{return smoothstep(-0.18,0.08,dot(radial,f.sun.xyz));}
 fn sun_disk(rd:vec3<f32>)->vec3<f32>{return vec3<f32>(18.0,15.0,10.0)*smoothstep(0.99991,0.99995,dot(rd,f.sun.xyz))*f.solar.z;}
 fn sky(rd:vec3<f32>)->vec3<f32> {
@@ -512,25 +528,122 @@ fn aerial(rd:vec3<f32>,limit:f32,color:vec3<f32>)->vec3<f32>{
  return color*T+light;
 }
 @compute @workgroup_size(8,8)
-fn composite(@builtin(global_invocation_id) id:vec3<u32>){if any(id.xy>=vec2<u32>(f.view.xy)){return;}let xy=vec2<i32>(id.xy);let rd=ray(vec2<f32>(id.xy)+0.5);var limit=limit_distance(xy,rd);
+fn composite(@builtin(global_invocation_id) id:vec3<u32>){if any(id.xy>=vec2<u32>(f.view.xy)){return;}let xy=vec2<i32>(id.xy);let rd=ray(vec2<f32>(id.xy)+0.5);
+ let water_sample=select(vec4<f32>(textureLoad(shaded,xy,0).rgb,1.0),textureLoad(water_in,xy,0),f.options.z>0.5);var limit=visible_limit(xy,water_sample.a);
  // A body nearer than the surface at this pixel hides it, and the air beyond that body does not reach the eye.
- var space=vec3<f32>(0);var ahead=false;if f.solar.x>0.5{space=textureLoad(space_color,xy,0).rgb;let d=textureLoad(space_distance,xy,0).r;if d>0.0&&d<limit&&limit<1e10{ahead=true;limit=d;}}
+ var space=vec3<f32>(0);var temporalDistance=limit;var reactive=water_sample.a!=1.0;var ahead=false;if f.solar.x>0.5{space=textureLoad(space_color,xy,0).rgb;let d=textureLoad(space_distance,xy,0).r;if d>0.0{temporalDistance=min(limit,d);}if d>0.0&&d<limit&&limit<1e10{ahead=true;limit=d;}}
  // Without the water pass (disabled, or its programs still compiling at
  // startup) the shaded surface is the colour and the water target is stale.
- let water_sample=select(vec4<f32>(textureLoad(shaded,xy,0).rgb,1.0),textureLoad(water_in,xy,0),f.options.z>0.5);let submerged=water_sample.a<0.5;var color=water_sample.rgb;let background=limit>1e10;
+ let submerged=water_sample.a<0.5;var color=water_sample.rgb;let background=limit>1e10;
  if background && !submerged {color=select(vec3<f32>(0.001,0.002,0.004),sky(rd),f.options.x>0.5)+space;}
  if ahead{color=space;}
  // Startup placeholder while the sea programs compile: a flat sea over the
  // submerged bed, replaced by the water pass as soon as it exists.
  if (f.tier_d.w&1u)!=0u&&!background{let bed=textureLoad(positions,xy,0);let depth=f.planet.y-bed.w;if depth>0.0{let up=normalize(f.eye_hi.xyz+f.eye_lo.xyz+bed.xyz);let light=0.2+0.8*max(0.0,dot(up,f.sun.xyz));color=mix(color,vec3<f32>(0.01,0.045,0.075)*light,1.0-exp(-depth*0.1));}}
  if f.options.x>0.5&&!submerged {let lut_trans=exp(-optical(rd).x*f.atmosphere_beta.x);color=aerial(rd,limit,color)*mix(0.94,1.0,lut_trans);}
- if f.options.y>0.5 && !submerged {let size=textureDimensions(clouds);let q=(vec2<f32>(id.xy)+0.5)/f.view.xy*vec2<f32>(size)-0.5;let base=vec2<i32>(floor(q));let frac=fract(q);var sum=vec4<f32>(0);var weight=0.0;
-  for(var y=0;y<2;y++){for(var x=0;x<2;x++){let coord=clamp(base+vec2<i32>(x,y),vec2<i32>(0),vec2<i32>(size)-1);let g=textureLoad(cloud_guide,coord,0);let w=select(1.0-frac.x,frac.x,x==1)*select(1.0-frac.y,frac.y,y==1);let valid=abs(g.y-limit)<max(100.0,limit*0.05)||g.x<min(limit,g.y);if valid{sum+=textureLoad(clouds,coord,0)*w;weight+=w;}}}
-  var cloud=vec4<f32>(0,0,0,1);if weight>0.001{cloud=sum/weight;}else{cloud=integrate_cloud(rd,limit,8u,2.0*f.view.w/f.view.y).color;}color=color*cloud.a+cloud.rgb;
+ if f.options.y>0.5 && !submerged {let size=textureDimensions(clouds);let q=(vec2<f32>(id.xy)+0.5)/f.view.xy*vec2<f32>(size)-0.5;let base=vec2<i32>(floor(q));let frac=fract(q);var sum=vec4<f32>(0);var weight=0.0;var depthMoment=0.0;
+  for(var y=0;y<2;y++){for(var x=0;x<2;x++){let coord=clamp(base+vec2<i32>(x,y),vec2<i32>(0),vec2<i32>(size)-1);let g=textureLoad(cloud_guide,coord,0);let w=select(1.0-frac.x,frac.x,x==1)*select(1.0-frac.y,frac.y,y==1);if cloud_guide_matches(g,limit){let c=textureLoad(clouds,coord,0);sum+=c*w;weight+=w;depthMoment+=w*g.w;}}}
+  // Missing neighbours at a ridge belong to another depth. Reconstruct
+  // their share along this ray with the same quadrature as the cloud pass.
+  let pixel=vec2<f32>(xy)+0.5;let cloudRay=view_ray(pixel);
+  if weight<.9999{let extra=integrate_cloud(cloudRay,limit,u32(f.lod.z),2.0*f.view.w/f32(size.y));sum+=(1.0-weight)*extra.color;depthMoment+=(1.0-weight)*extra.guide.w;}
+  // Sparse far samples can place a grazing silhouette on different rows.
+  // Integrate across the final pixel along the projected local vertical.
+  let vertical=normalize(f.eye_hi.xyz+f.eye_lo.xyz);
+  if abs(dot(cloudRay,vertical))<0.19{
+   let direction=normalize(vec2<f32>(dot(vertical,f.right.xyz),-dot(vertical,f.up.xyz))+vec2<f32>(1.e-8));
+   let texel=vec2<i32>(round(q));let step=vec2<i32>(round(direction));
+   let last=vec2<i32>(size)-1;
+   let left=textureLoad(clouds,clamp(texel-step,vec2<i32>(0),last),0).a;
+   let right=textureLoad(clouds,clamp(texel+step,vec2<i32>(0),last),0).a;
+   let edge=smoothstep(.045,.32,max(abs(left-right),max(abs(sum.a-left),abs(sum.a-right))));
+   if edge>0.0{
+    let angle=2.0*f.view.w/f.view.y;
+    let a=integrate_cloud(view_ray(pixel-direction*.32),limit,u32(f.lod.z),angle);
+    let b=integrate_cloud(view_ray(pixel+direction*.32),limit,u32(f.lod.z),angle);
+    sum=mix(sum,(a.color+b.color)*0.5,edge);
+    depthMoment=mix(depthMoment,(a.guide.w+b.guide.w)*0.5,edge);
+   }
+  }
+  if sum.a<0.90{reactive=true;if depthMoment>0.0{temporalDistance=min(temporalDistance,depthMoment/max(.001,1.0-sum.a));}}
+  color=color*sum.a+sum.rgb;
  }
  // Dissolve only the distant planet. Nearby geometry stays fully present
  // while terrain/cloud representations exchange ownership.
  if f.solar.x>0.5&&f.surface_blend.x<1.0&&limit>512.0{let far=textureLoad(space_active,xy,0);color=mix(select(far.rgb+space*(1.0-far.a),space,ahead),color,f.surface_blend.x);}
  if f.options.w>0.5{color=textureLoad(shaded,xy,0).rgb;}
- textureStore(hdr_out,xy,vec4<f32>(min(max(vec3<f32>(0),color),vec3<f32>(60000.0)),1));
+ let depth=select(log2(1.0+temporalDistance),60.0,temporalDistance>=1e12);
+ textureStore(hdr_out,xy,vec4<f32>(clamp(color,vec3<f32>(0),vec3<f32>(60000)),select(1.0,select(depth,-depth,reactive),f.temporal.z>0.0)));
+}
+
+// Both buffers hold linear radiance. Source alpha is signed log ray distance
+// (negative for cloud or water, 60 for the sky). A resolved pixel on a stable
+// skyline uses 64..319 for its last eight coverage bits; binary16 represents
+// these integers exactly. A moving/disoccluded pixel rejects that local mask.
+@group(0) @binding(191) var taa_current:texture_2d<f32>;
+@group(0) @binding(192) var taa_history:texture_2d<f32>;
+@group(0) @binding(193) var taa_target:texture_storage_2d<rgba16float,write>;
+fn temporal_sample(xy:vec2<i32>)->vec4<f32>{
+ let source=textureLoad(taa_current,xy,0);
+ if f.temporal.z<1.5{return source;}
+ let d=textureLoad(space_distance,xy,0).r;
+ return vec4<f32>(source.rgb,select(60.0,log2(1.0+d),d>0.0));
+}
+@compute @workgroup_size(8,8)
+fn temporal_resolve(@builtin(global_invocation_id) id:vec3<u32>){
+ let size=vec2<i32>(textureDimensions(taa_current));let xy=vec2<i32>(id.xy);if any(xy>=size){return;}
+ let cur=temporal_sample(xy);let center=vec2<f32>(xy)+0.5;
+ if f.temporal.w<0.5{textureStore(taa_target,xy,cur);return;}
+ let rd=ray(center);let distance=exp2(abs(cur.a))-1.0;
+ let delta=(f.eye_hi.xyz-f.prev_hi.xyz)+(f.eye_lo.xyz-f.prev_lo.xyz);
+ let p=select(rd*distance+delta,rd,abs(cur.a)>=59.0);
+ let z=dot(p,f.prev_forward.xyz);
+ let uv=vec2<f32>(dot(p,f.prev_right.xyz)/(f.view.z*f.view.w),-dot(p,f.prev_up.xyz)/f.view.w)/max(1.e-9,z)*0.5+0.5;
+ let prev=uv*f.view.xy-f.temporal.xy;
+ if z<=0.0||any(prev<vec2<f32>(0.5))||any(prev>f.view.xy-0.5){textureStore(taa_target,xy,cur);return;}
+ let motion=length(prev-center);
+ var lo=cur.rgb;var hi=cur.rgb;var dlo=abs(cur.a);var dhi=dlo;
+ for(var y=-1;y<=1;y++){for(var x=-1;x<=1;x++){
+  let n=temporal_sample(clamp(xy+vec2<i32>(x,y),vec2<i32>(0),size-1));
+  lo=min(lo,n.rgb);hi=max(hi,n.rgb);dlo=min(dlo,abs(n.a));dhi=max(dhi,abs(n.a));
+ }}
+ // Track the eight coverage samples independently of radiance. An exponential
+ // average weights one side of a silhouette more heavily each time the jitter
+ // sequence crosses it, even when both the sky and the ground are motionless.
+ let parallax=length(delta)*f.view.y/(2.0*f.view.w*max(1.0,exp2(dlo)-1.0));
+ if f.temporal.z<1.5&&cur.a>=0.0&&dhi==60.0&&dlo<55.0&&motion+parallax<.12{
+  let old=textureLoad(taa_history,vec2<i32>(floor(prev)),0);
+  let ground=cur.a<59.0;
+  let oldMask=select(select(0u,255u,ground),u32(clamp(old.a-64.0,0.0,255.0)),old.a>=64.0);
+  let mask=((oldMask<<1u)|u32(ground))&255u;
+  var land=vec3<f32>(0);var skyColor=vec3<f32>(0);var lw=0.0;var sw=0.0;
+  for(var y=-1;y<=1;y++){for(var x=-1;x<=1;x++){
+   let n=textureLoad(taa_current,clamp(xy+vec2<i32>(x,y),vec2<i32>(0),size-1),0);
+   let w=1.0/(1.0+f32(x*x+y*y));
+   if n.a==60.0{skyColor+=w*n.rgb;sw+=w;}else if n.a>=0.0{land+=w*n.rgb;lw+=w;}
+  }}
+  if lw>0.0&&sw>0.0{
+   let foreground=select(land/lw,cur.rgb,ground);let background=select(cur.rgb,skyColor/sw,ground);
+   let sample=mix(background,foreground,f32(countOneBits(mask))*.125);
+   // Smooth small shading changes without delaying changes in edge coverage.
+   let keep=select(0.0,.55,old.a>=64.0&&countOneBits(oldMask)==countOneBits(mask));
+   textureStore(taa_target,xy,vec4<f32>(mix(sample,clamp(old.rgb,lo,hi),keep),64.0+f32(mask)));return;
+  }
+ }
+ let expected=select(log2(1.0+length(p)),abs(cur.a),abs(cur.a)>=59.0);
+ let base=vec2<i32>(floor(prev-0.5));let frac=fract(prev-0.5);
+ var sum=vec3<f32>(0);var coverage=0.0;
+ for(var y=0;y<2;y++){for(var x=0;x<2;x++){
+  let h=textureLoad(taa_history,min(base+vec2<i32>(x,y),size-1),0);
+  let w=select(1.0-frac.x,frac.x,x==1)*select(1.0-frac.y,frac.y,y==1);
+  let depth=abs(h.a);
+  let stableEdge=motion+parallax<0.25 && depth>=dlo-.014 && depth<=dhi+.014;
+  if abs(depth-expected)<.028||stableEdge{sum+=h.rgb*w;coverage+=w;}
+ }}
+ let history=sum/max(.000001,coverage);
+ // Clip on the line toward the centre of the local HDR box to preserve hue.
+ let mid=(hi+lo)*0.5;let halfRange=max((hi-lo)*0.5,vec3<f32>(.0001));let v=history-mid;
+ let units=abs(v)/halfRange;let clipped=mid+v/max(1.0,max(units.x,max(units.y,units.z)));
+ let weight=mix(.875,.56,smoothstep(.4,8.0,motion))*select(1.0,.63,cur.a<0.0)*coverage;
+ textureStore(taa_target,xy,vec4<f32>(mix(cur.rgb,clipped,weight),cur.a));
 }

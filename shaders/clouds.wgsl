@@ -2,29 +2,53 @@
 // A world-anchored cube atlas makes weather independent of ray length or camera.
 struct Weather { amount:f32,kind:f32,base:f32,top:f32,warp:f32 }
 // Weather base <= 1780m and cumulus thickness <= 10000m. Keep the ray/shadow
-// shell outside that envelope, and the local cache above it with spare gutters.
+// shell outside that envelope.
 fn cloud_shell_top()->f32{return f.cloud_shell.x;}
-// Local density/light volume: a world-anchored lattice on the camera's cube
-// chart (CLOUD_CACHE_SIZE cells of CLOUD_CACHE_CELL metres) with CLOUD_CACHE_SIZE
-// radial slices from CLOUD_CACHE_BOTTOM at CLOUD_CACHE_SLICE spacing. Toroidal
-// storage keeps every retained voxel while the camera moves; animation refreshes
-// an interleaved fraction of voxels per frame.
-fn cloud_cache_size()->i32{return i32(f.tier_b.w);}
-const CLOUD_CACHE_CELL:f32=256.0;
-const CLOUD_CACHE_BOTTOM:f32=1024.0;
-const CLOUD_CACHE_SLICE:f32=96.0;
-struct CloudCacheState {origin:vec4<i32>,previous:vec4<i32>,control:vec4<u32>}
 @group(0) @binding(45) var weather_out:texture_storage_2d<rgba16float,write>;
 @group(0) @binding(46) var weather_map:texture_2d<f32>;
-@group(0) @binding(48) var cloud_local_out:texture_storage_3d<rgba16float,write>;
-@group(0) @binding(49) var cloud_local:texture_3d<f32>;
+@group(0) @binding(48) var cloud_shape_out:texture_storage_3d<rgba16float,write>;
+@group(0) @binding(49) var cloud_shape:texture_3d<f32>;
 @group(0) @binding(50) var cloud_sampler:sampler;
-@group(0) @binding(84) var<storage,read_write> cloud_cache:CloudCacheState;
-// Per-column weather of the volume (kind, base - 1550, thickness): a tiny 2D
-// texture instead of three wasted channels in every voxel.
-@group(0) @binding(85) var cloud_column_out:texture_storage_2d<rgba16float,write>;
-@group(0) @binding(86) var cloud_column:texture_2d<f32>;
-@group(0) @binding(87) var cloud_wrap_sampler:sampler;
+@group(0) @binding(87) var cloud_repeat:sampler;
+
+// One periodic volume per device. RGB carries three independent smooth noise
+// fields; alpha is the distance to the nearest jittered cell centre (Worley).
+// Wrap the lattice IDs, never the distances, including across the tile seam.
+fn cloud_cell_random(cell:vec3<i32>)->vec3<f32>{
+ let c=vec3<u32>(cell)&vec3<u32>(7u);
+ let bits=hash(c.x+8u*c.y+64u*c.z+211u);
+ return vec3<f32>(vec3<u32>(bits,bits>>10u,bits>>20u)&vec3<u32>(1023u))/1023.0;
+}
+@compute @workgroup_size(4,4,4)
+fn cloud_shape_generate(@builtin(global_invocation_id) id:vec3<u32>){
+ let size=textureDimensions(cloud_shape_out);
+ if any(id>=size){return;}
+ let p=(vec3<f32>(id)+0.5)*8.0/vec3<f32>(size);
+ let cell=vec3<i32>(floor(p));let fcell=fract(p);
+ let u=fcell*fcell*fcell*(fcell*(fcell*6.0-15.0)+10.0);
+ var value=vec3<f32>(0);var nearest=4.0;
+ for(var z=-1;z<=1;z++){for(var y=-1;y<=1;y++){for(var x=-1;x<=1;x++){
+  let offset=vec3<i32>(x,y,z);let random=cloud_cell_random(cell+offset);
+  let delta=vec3<f32>(offset)+0.1+0.8*random-fcell;
+  nearest=min(nearest,dot(delta,delta));
+  if all(offset>=vec3<i32>(0)){
+   let weights=select(1.0-u,u,offset==vec3<i32>(1));
+   value+=random*weights.x*weights.y*weights.z;
+  }
+ }}}
+ textureStore(cloud_shape_out,id,vec4<f32>(value,1.0-smoothstep(0.06,1.1,sqrt(nearest))));
+}
+fn cloud_octave(p:vec3<f32>,cell_metres:f32)->vec4<f32>{
+ return textureSampleLevel(cloud_shape,cloud_repeat,p/(8.0*cell_metres),0.0)*2.0-1.0;
+}
+// A translation on the periodic texture preserves metre-scale detail even
+// after long epochs. Radial offsets proportional to time stretched the
+// density gradient with latitude and produced seams during fast flight.
+fn cloud_evolving_octave(p:vec3<f32>,scale:f32,velocity:vec3<f32>)->vec4<f32>{
+ let period=8.0*scale;
+ let phase=fract(velocity*(f.cloud_motion.y/period));
+ return textureSampleLevel(cloud_shape,cloud_repeat,p/period+phase,0.0)*2.0-1.0;
+}
 // Far-field clouds beyond f.cloud_far.y metres integrate at a reduced
 // resolution (f.cloud_far.x cloud pixels per far texel). The near pass
 // composes them behind its own segment with the same depth-guided validity
@@ -66,21 +90,19 @@ fn cloud_weather(p:vec3<f32>)->Weather{
  return Weather(amount,kind,base,base+mix(650.0,10000.0,kind)*(0.55+0.45*smoothstep(-0.08,0.45,amount)),activity);
 }
 fn weather_direction(face:u32,uv:vec2<f32>)->vec3<f32>{switch face{case 0u:{return vec3<f32>(1,uv.y,-uv.x);}case 1u:{return vec3<f32>(-1,uv.y,uv.x);}case 2u:{return vec3<f32>(uv.x,1,-uv.y);}case 3u:{return vec3<f32>(uv.x,-1,uv.y);}case 4u:{return vec3<f32>(uv,1);}default:{return vec3<f32>(-uv.x,uv.y,-1);}}}
-// Interleaved refresh for animated fields: with divisor N each ROW (or voxel
-// row) is re-evaluated every N frames. Rows are chosen so that the decision is
-// uniform across a whole 64-wide workgroup; skipping individual threads would
-// leave their warps running. Parameter changes refresh everything.
-fn cloud_refresh(row:u32,depth:u32)->bool{
- if f.cloud_cache.z!=0u{return true;}
- if f.cloud_cache.w==0u{return false;}
- let divisor=max(1u,f.cloud_cache.y);
- return ((row+3u*depth+f.cloud_cache.x)%divisor)==0u;
+// Each dispatched group updates one tile. Offset each column's refresh
+// phase so an advancing weather front never acquires frame-wide stripes.
+@compute @workgroup_size(8,8)
+fn weather_generate(@builtin(workgroup_id) group:vec3<u32>,@builtin(local_invocation_id) lane:vec3<u32>){
+ let face_size=f.tier_c.x;let padded=face_size+2u;
+ let divisor=select(max(1u,f.cloud_cache.y),1u,f.cloud_cache.z!=0u);
+ let phase=(hash(group.x+4099u*group.y)%divisor+f.cloud_cache.x%divisor)%divisor;
+ let xy=vec2<u32>(group.x,group.y*divisor+phase)*8u+lane.xy;
+ if xy.x>=padded||xy.y>=6u*padded||f.options.y<0.5{return;}
+ let face=xy.y/padded;let uv=(vec2<f32>(vec2<u32>(xy.x,xy.y%padded))-0.5)/f32(face_size)*2.0-1.0;
+ let w=cloud_weather(normalize(weather_direction(face,uv))*f.planet.x);
+ textureStore(weather_out,xy,vec4<f32>(w.amount,w.kind,w.base-1550.0,w.warp));
 }
-@compute @workgroup_size(64,1)
-fn weather_generate(@builtin(global_invocation_id) id:vec3<u32>){let face_size=f.tier_c.x;let padded=face_size+2u;if id.x>=padded||id.y>=6u*padded||f.options.y<0.5{return;}if !cloud_refresh(id.y,0u){return;}let face=id.y/padded;let uv=(vec2<f32>(vec2<u32>(id.x,id.y%padded))-0.5)/f32(face_size)*2.0-1.0;let w=cloud_weather(normalize(weather_direction(face,uv))*f.planet.x);
- // Half-float atlas: the base is stored relative to its 1550 m mean so f16
- // keeps 0.25 m precision; amount, kind and activity are unit-scale fields.
- textureStore(weather_out,vec2<i32>(id.xy),vec4<f32>(w.amount,w.kind,w.base-1550.0,w.warp));}
 fn cached_weather(p:vec3<f32>)->Weather{
  let a=abs(p);var face=0u;var uv=vec2<f32>(0);
  if a.x>=max(a.y,a.z){face=select(1u,0u,p.x>=0.0);uv=vec2<f32>(select(p.z,-p.z,p.x>=0.0),p.y)/a.x;}
@@ -99,62 +121,80 @@ fn cloud_ramp_integral(x:f32,a:f32,b:f32)->f32{let t=clamp((x-a)/(b-a),0.0,1.0);
 fn cloud_profile_integral(value:f32)->f32{let x=clamp(value,0.0,1.0);return cloud_ramp_integral(x,0.0,0.08)-cloud_ramp_integral(x,0.90,1.0);}
 // Returns the body (density, or the coverage probability where the filter
 // dropped octaves into the statistical term) and the correlation length of
-// that unresolved structure (a quarter of each dropped octave's scale,
+// that unresolved structure (an estimated chord of each dropped octave,
 // amplitude weighted; zero when everything is resolved), which the medium
-// needs to turn the probability into a mean transmittance.
-fn cloud_body(p:vec3<f32>,h:f32,footprint:f32,w:Weather)->vec2<f32>{
- if w.amount<=0.0{return vec2<f32>(0);}
- let seed=bitcast<u32>(f.geo.z);let radial=normalize(p);let thickness=max(100.0,w.top-w.base);let raw_height=(h-w.base)/thickness;let height=clamp(raw_height,0.0,1.0);
- let q=cloud_advect(p,height);
- // Weather selects a regime, not an opaque background sheet. Mesoscale dry
- // slots and independent cloud groups cut through BOTH cloud types. Blending
- // two separately filled layers would fill every cumulus gap with stratus.
- let system=water_simplex(vec3<f32>(0),q+radial*f.cloud_motion.y*5.0,131072.0,seed+211u,vec3<f32>(0),vec3<f32>(0)).field;
- let warped=q+cross(system.xyz*131072.0,radial)*(20000.0*f.cloud_motion.z*w.warp);
- let cluster=cloud_noise(warped,32768.0,seed+214u)*filter_weight(65536.0,footprint);
+// needs to turn the probability into a mean transmittance. zw bound the local
+// cloud column inside the regional weather envelope, in metres.
+fn cloud_body(p:vec3<f32>,h:f32,footprint:f32,w:Weather)->vec4<f32>{
+ if w.amount<=0.0{return vec4<f32>(0,0,w.base,w.top);}
+ let radial=normalize(p);let thickness=max(100.0,w.top-w.base);
+ let height=clamp((h-w.base)/thickness,0.0,1.0);
+ let advected=cloud_advect(p,height);
+ // Orthogonal rotation keeps metres isotropic. A seed translation and the
+ // evolving regional warp break up repetition between weather systems.
+ let seed=hash(bitcast<u32>(f.geo.z));
+ let offset=vec3<f32>(vec3<u32>(seed,seed>>10u,seed>>20u)&vec3<u32>(1023u))*1024.0;
+ let rotated=advected-(2.0/3.0)*(advected.x+advected.y+advected.z)+offset;
+ let up=radial-(2.0/3.0)*(radial.x+radial.y+radial.z);
+ // A hardware filter has a finite number of subtexel positions. At the
+ // 131 km scale its interpolation steps would be tens of metres apart;
+ // magnifying those steps as domain offsets imprinted stripes on small puffs.
+ let system=cloud_evolving_octave(rotated,131072.0,vec3<f32>(3,-2,1)).x;
+ let phase=rotated/131072.0+6.2831853*fract(f.cloud_motion.y*vec3<f32>(0.000013,0.000009,-0.000011));
+ let flow=sin(phase.yzx+phase.zxy)*cos(phase.zxy-phase);
+ let warped=rotated+cross(flow,up)*(12000.0*f.cloud_motion.z*w.warp);
+ let cluster=cloud_octave(warped.yzx,32768.0).y*filter_weight(65536.0,footprint);
  // Dense cumulus would otherwise remain solid at height=1, sliced off by
  // the weather ceiling. Erode the upper mass to isolated rounded summits
  // before the envelope closes. The expanded layer leaves room for tall caps;
  // increasing the ray shell alone would still leave a flat weather ceiling.
- let vertical=mix(pow(height,4.0)*0.18,pow(height,1.5)*0.55+1.5*smoothstep(0.50,0.90,height),w.kind);
- let mass=w.amount*0.62+system.w*0.62+cluster*0.40-0.40-vertical;
- let large_amplitude=mix(0.10,0.20,w.kind);let small_amplitude=mix(0.05,0.14,w.kind);
+ let vertical=mix(pow(height,4.0)*0.18,pow(height,1.5)*0.45+1.2*smoothstep(0.42,0.96,height),w.kind);
+ let mass=w.amount*0.62+system*0.80+cluster*0.52-0.40-vertical;
+ let large_amplitude=mix(0.12,0.25,w.kind);let small_amplitude=mix(0.16,0.48,w.kind);
  let large_weight=filter_weight(32768.0,footprint);let small_weight=filter_weight(8192.0,footprint);
  // Unresolved variation widens the coverage distribution instead of turning
  // the mean of a broken cloud group into a solid blurred slab.
- let puff_amplitude=0.12*w.kind;let puff_weight=filter_weight(2048.0,footprint);
+ let puff_amplitude=mix(0.085,0.22,w.kind);let puff_weight=filter_weight(2048.0,footprint);
  let unresolved=large_amplitude*(1.0-large_weight)+small_amplitude*(1.0-small_weight)+puff_amplitude*(1.0-puff_weight);
- let width=0.09+unresolved*0.6;let residual=large_amplitude*large_weight+small_amplitude*small_weight+puff_amplitude*puff_weight;
- let ell=(puff_amplitude*(1.0-puff_weight)*256.0+small_amplitude*(1.0-small_weight)*1024.0+large_amplitude*(1.0-large_weight)*4096.0)/max(0.000001,puff_amplitude+small_amplitude+large_amplitude);
- // Simplex values are clamped to [-1,1]; these early exits enclose all omitted
+ let width=0.125+unresolved*0.6;let residual=large_amplitude*large_weight+small_amplitude*small_weight+puff_amplitude*puff_weight;
+ // The cellular cumulus lobes have shorter contiguous chords than smooth
+ // stratus. Estimate one baked voxel (one sixth of a cell) for those lobes.
+ let chord=mix(0.25,1.0/6.0,w.kind);
+ let ell=chord*(puff_amplitude*(1.0-puff_weight)*1024.0+small_amplitude*(1.0-small_weight)*4096.0+large_amplitude*(1.0-large_weight)*16384.0)/max(0.000001,puff_amplitude+small_amplitude+large_amplitude);
+ // Shape samples stay in [-1,1]; these early exits enclose all omitted
  // detail, including every evolution epoch. No occupied density is skipped.
- if mass+residual<=-width{return vec2<f32>(0.0,ell);}
+ if mass+residual<=-width{return vec4<f32>(0.0,ell,w.base,w.top);}
+ let small=cloud_evolving_octave(warped.zxy,4096.0,vec3<f32>(-3,7,8));
+ // Even the interior of a filled bank has rolling tops and a ragged base.
+ // Fade unresolved relief to its mean so distant decks keep a stable depth.
+ let top=w.top-thickness*(0.24-0.22*small.w*small_weight);
+ let base=w.base+thickness*0.04*(1.0+small.x*small_weight);
  var body=1.0;
  if mass-residual<width{
-  let large=cloud_noise(warped+radial*f.cloud_motion.y*7.0,16384.0,seed+212u);
-  let small=cloud_noise(warped+radial*f.cloud_motion.y*11.0,4096.0,seed+213u);
-  let puff=cloud_noise(warped+radial*f.cloud_motion.y*13.0,1024.0,seed+215u);
-  body=smoothstep(-width,width,mass+large*large_amplitude*large_weight+small*small_amplitude*small_weight+puff*puff_amplitude*puff_weight);
+  let large=cloud_evolving_octave(warped,16384.0,vec3<f32>(5,4,-3));
+  var puff=0.0;
+  if puff_weight>0.0{
+   puff=cloud_evolving_octave(warped,1024.0,vec3<f32>(8,-5,9)).w;
+   let erosion=filter_weight(512.0,footprint);
+   if erosion>0.0{puff=mix(puff,cloud_evolving_octave(warped.zxy,256.0,vec3<f32>(-8,10,4)).w,0.28*erosion);}
+  }
+  body=smoothstep(-width,width,mass+mix(large.z,large.w,w.kind)*large_amplitude*large_weight+mix(small.y,small.w,w.kind)*small_amplitude*small_weight+puff*puff_amplitude*puff_weight);
  }
  // Regional weather is a continuous envelope, not a binary mask. Small
  // amounts can still contain dense mesoscale groups; skipping them at 0.005
  // clipped those groups against a visible weather-contour wall.
- return vec2<f32>(body*smoothstep(0.0,0.12,w.amount),ell);
+ return vec4<f32>(body*smoothstep(0.0,0.12,w.amount),ell,base,top);
 }
-// Cache the smooth shape, not a voxel-averaged boundary and its exponentiated
-// light. Interpolating those products created 128 m bright/dark layers.
-// Integrate the analytic envelope at the ray's OWN span after interpolation.
-fn cloud_medium(relative:vec3<f32>,height:f32,vertical_span:f32,shape:vec4<f32>,ell:f32)->vec4<f32>{
- let p=f.eye_hi.xyz+(f.eye_lo.xyz+relative);let radial=normalize(p);let thickness=max(100.0,shape.w-shape.z);
- let h=(height-shape.z)/thickness;let half_width=max(0.0001,vertical_span*0.5/thickness);
+// Average the vertical envelope over the length covered by this sample.
+fn cloud_profile(height:f32,span:f32,bounds:vec2<f32>)->vec2<f32>{
+ let thickness=max(1.0,bounds.y-bounds.x);
+ let h=(height-bounds.x)/thickness;let half_width=0.5*span/thickness;
  var profile=smoothstep(0.0,0.08,h)*(1.0-smoothstep(0.90,1.0,h));
  if half_width>0.001{profile=clamp((cloud_profile_integral(h+half_width)-cloud_profile_integral(h-half_width))/(2.0*half_width),0.0,1.0);}
- // Sunlight depends on the receiver, not on which density cache supplies its
- // shape. Evaluate it once after the cached/direct density transition below.
- return vec4<f32>(cloud_extinction(shape.x,shape.y,ell)*profile,1.0,clamp(h,0.0,1.0),daylight(radial));
+ return vec2<f32>(profile,clamp(h,0.0,1.0));
 }
-fn cloud_extinction(density:f32,kind:f32,ell:f32)->f32{
- let sigma=mix(0.00065,0.0011,kind);var extinction=density*sigma;
+fn cloud_extinction(density:f32,kind:f32,ell:f32,profile:f32)->f32{
+ let sigma=mix(0.00125,0.0011,kind)*profile;var extinction=density*sigma;
  // Unresolved structure (ell > 0: the correlation length of the octaves the
  // filter dropped into the coverage term) is a mixture, not a uniform
  // medium. A path crosses cells of length ell that are cloud with
@@ -176,11 +216,14 @@ fn cloud_far_map(@builtin(global_invocation_id) id:vec3<u32>){
  let size=textureDimensions(cloud_far_map_out);if id.x>=size.x{return;}
  let row=(id.y+u32(f.lod.w))%size.y;let uv=(vec2<f32>(f32(id.x),f32(row))+0.5)/vec2<f32>(size);
  let lon=(uv.x-0.5)*6.28318531;let lat=(0.5-uv.y)*3.14159265;let n=vec3<f32>(cos(lat)*sin(lon),sin(lat),cos(lat)*cos(lon));
- let w=cached_weather(n*f.planet.x);let footprint=6.28318531*f.planet.x/f32(size.x);
+ // One weather evaluation per orbital column, shared by all its layers.
+ // The active surface can belong to a different body and owns its atlas.
+ var w=cloud_weather(n*f.planet.x);w.amount=smoothstep(-0.08,0.45,w.amount);
+ let footprint=6.28318531*f.planet.x/f32(size.x);
  const STEPS=8;let thickness=max(100.0,w.top-w.base);let ds=thickness/f32(STEPS);var depth=0.0;
  for(var i=0;i<STEPS;i++){
   let t=(f32(i)+0.5)/f32(STEPS);let h=w.base+t*thickness;let body=cloud_body(n*(f.planet.x+h),h,footprint,w);
-  depth+=cloud_extinction(body.x,w.kind,body.y)*smoothstep(0.0,0.08,t)*(1.0-smoothstep(0.90,1.0,t))*ds;
+  depth+=cloud_extinction(body.x,w.kind,body.y,cloud_profile(h,ds,body.zw).x)*ds;
  }
  textureStore(cloud_far_map_out,vec2<i32>(i32(id.x),i32(row)),vec4<f32>(1.0-exp(-depth),w.kind,0.0,1.0));
 }
@@ -188,121 +231,36 @@ fn cloud_field(relative:vec3<f32>,footprint:f32,vertical_span:f32)->vec4<f32>{
  let p=f.eye_hi.xyz+(f.eye_lo.xyz+relative);let w=cached_weather(p);let height=sc_radial_height(relative);
  if height+vertical_span*0.5<w.base||height-vertical_span*0.5>w.top{return vec4<f32>(0);}
  let body=cloud_body(p,height,footprint,w);
- return cloud_medium(relative,height,vertical_span,vec4<f32>(body.x,w.kind,w.base,w.top),body.y);
+ let profile=cloud_profile(height,vertical_span,body.zw);
+ return vec4<f32>(cloud_extinction(body.x,w.kind,body.y,profile.x),1.0,profile.y,daylight(normalize(p)));
 }
 fn cloud_axis(n:vec3<f32>)->vec3<f32>{return normalize(cross(select(vec3<f32>(0,0,1),vec3<f32>(0,1,0),abs(n.z)>0.95),n));}
-// Chart lattice of the local volume: absolute cell index of a world point on
-// the anchored face (cell centres at (index + 0.5) * CLOUD_CACHE_CELL).
-fn cloud_cache_cell(world:vec3<f32>,face:u32)->vec2<f32>{let c=sc_face_project(face,world);return c.xy/c.z*f.planet.x/CLOUD_CACHE_CELL-0.5;}
-@compute @workgroup_size(1)
-fn cloud_cache_begin(){
- // Anchor the lattice on the camera's chart face cell. Lateral motion moves
- // the window by whole cells; its retained voxels stay valid.
- let eye=f.eye_hi.xyz+f.eye_lo.xyz;let face=sun_face(eye);
- let anchor=vec2<i32>(floor(cloud_cache_cell(eye,face)+0.5))-cloud_cache_size()/2;
- cloud_cache.previous=cloud_cache.origin;
- let fresh=cloud_cache.control.x==0u||f.options.y<0.5||f.eye_hi.w>20000.0;
- cloud_cache.origin=vec4<i32>(anchor,i32(face),select(0,1,fresh));
- cloud_cache.control=vec4<u32>(select(1u,0u,f.options.y<0.5||f.eye_hi.w>20000.0),0u,0u,0u);
-}
-fn cloud_cache_position(absolute:vec2<i32>,slice:i32,face:u32)->vec3<f32>{
- let uv=(vec2<f32>(absolute)+0.5)*CLOUD_CACHE_CELL/f.planet.x;
- return normalize(weather_direction(face,uv))*(f.planet.x+CLOUD_CACHE_BOTTOM+(f32(slice)+0.5)*CLOUD_CACHE_SLICE);
-}
-@compute @workgroup_size(64,1,1)
-fn cloud_local_generate(@builtin(global_invocation_id) id:vec3<u32>){
- if f.options.y<0.5||f.eye_hi.w>20000.0||i32(id.x)>=cloud_cache_size(){return;}
- let origin=cloud_cache.origin;let previous=cloud_cache.previous;let storage=vec3<i32>(id);
- let absolute=origin.xy+((storage.xy-origin.xy)%cloud_cache_size()+cloud_cache_size())%cloud_cache_size();
- let retained=all(absolute>=previous.xy)&&all(absolute<previous.xy+cloud_cache_size())&&previous.z==origin.z&&origin.w==0;
- if retained&&!cloud_refresh(id.y,id.z){return;}
- let p=cloud_cache_position(absolute,storage.z,u32(origin.z));let w=cached_weather(p);
- let height=CLOUD_CACHE_BOTTOM+(f32(storage.z)+0.5)*CLOUD_CACHE_SLICE;var body=0.0;
- if height>w.base-CLOUD_CACHE_SLICE&&height<w.top+CLOUD_CACHE_SLICE{body=cloud_body(p,height,CLOUD_CACHE_CELL,w).x;}
- // Direct sunlight at the voxel from the shared profile maps, stored beside
- // the density so one trilinear fetch serves both; interpolation never mixes
- // their product because the medium multiplies them after filtering.
- let relative=(p-f.eye_hi.xyz)-f.eye_lo.xyz-f.eye_tail.xyz;
- // Optical depth interpolates far better than transmittance: the sun-ray
- // integral is smooth at the lattice scale while its exponential is not.
- let light=sun_cloud_lookup(relative);
- let optical=min(24.0,-log(max(light.transmittance,1.0e-9)));
- textureStore(cloud_local_out,storage,vec4<f32>(body,optical,light.solid,0));
- if storage.z==0{textureStore(cloud_column_out,storage.xy,vec4<f32>(w.kind,w.base-1550.0,w.top-w.base,0));}
-}
-struct CloudCacheSample {medium:vec4<f32>,light:f32,weight:f32}
-struct CloudCacheAddress {uvw:vec3<f32>,weight:f32}
-// Lattice address and blend weight of a camera-relative point (no fetch).
-fn cloud_cache_address(relative:vec3<f32>,height:f32)->CloudCacheAddress{
- var result=CloudCacheAddress(vec3<f32>(0),0.0);
- if cloud_cache.control.x==0u||(u32(f.cloud_drift.z)&2u)!=0u{return result;}
- let origin=cloud_cache.origin;let world=f.eye_hi.xyz+(f.eye_lo.xyz+relative);
- let projected=sc_face_project(u32(origin.z),world);if projected.z<f.planet.x*0.25{return result;}
- let cell=projected.xy/projected.z*f.planet.x/CLOUD_CACHE_CELL-0.5;
- let centre=vec2<f32>(origin.xy)+f32(cloud_cache_size()/2)-0.5;let edge=max(abs(cell.x-centre.x),abs(cell.y-centre.y));
- let slice=(height-CLOUD_CACHE_BOTTOM)/CLOUD_CACHE_SLICE-0.5;
- let weight=(1.0-smoothstep(f32(cloud_cache_size()/2)-17.0,f32(cloud_cache_size()/2)-5.0,edge))*(1.0-smoothstep(18000.0,20000.0,f.eye_hi.w));
- if weight<=0.0||slice< -0.5||slice>f32(cloud_cache_size())-0.5{return result;}
- let wrapped=cell-f32(cloud_cache_size())*floor(cell/f32(cloud_cache_size()));
- result.uvw=vec3<f32>((wrapped+0.5)/f32(cloud_cache_size()),(clamp(slice,0.0,f32(cloud_cache_size())-1.0)+0.5)/f32(cloud_cache_size()));
- result.weight=weight;
- return result;
-}
-// Keep height and local-volume coordinates camera-relative. length(world)-R
-// quantizes a thin cloud boundary into half-metre horizontal slabs on Earth.
-fn cloud_cache_sample(relative:vec3<f32>,height:f32,vertical_span:f32)->CloudCacheSample{
- var result=CloudCacheSample(vec4<f32>(0),1.0,0.0);
- let address=cloud_cache_address(relative,height);if address.weight<=0.0{return result;}
- result.weight=address.weight;
- // A voxel is non-zero only within its own column's layer plus one slice, and
- // a trilinear read reaches one more slice. The union of the four columns the
- // bilinear footprint reads (gathered, not the interpolated average) therefore
- // bounds every contributing voxel: a sample outside it is exactly empty and
- // skips the volume fetch, which is most of the march below or above a deck.
- let bases=textureGather(1,cloud_column,cloud_wrap_sampler,address.uvw.xy)+1550.0;
- let tops=bases+textureGather(2,cloud_column,cloud_wrap_sampler,address.uvw.xy);
- let lowest=min(min(bases.x,bases.y),min(bases.z,bases.w))-2.0*CLOUD_CACHE_SLICE;
- let highest=max(max(tops.x,tops.y),max(tops.z,tops.w))+2.0*CLOUD_CACHE_SLICE;
- if height<lowest||height>highest{result.medium=vec4<f32>(0.0,1.0,0.0,daylight(normalize(f.eye_hi.xyz+(f.eye_lo.xyz+relative))));return result;}
- let packed=textureSampleLevel(cloud_local,cloud_wrap_sampler,address.uvw,0.0);
- let column=textureSampleLevel(cloud_column,cloud_wrap_sampler,address.uvw.xy,0.0);
- result.medium=cloud_medium(relative,height,vertical_span,vec4<f32>(packed.x,column.x,column.y+1550.0,column.y+1550.0+column.z),0.0);
- result.light=exp(-packed.y)*packed.z;
- return result;
-}
 fn sampled_cloud(relative:vec3<f32>,footprint:f32,vertical_span:f32)->vec4<f32>{
- let height=sc_radial_height(relative);
- let cached=cloud_cache_sample(relative,height,vertical_span);
- var medium=cached.medium;
- if cached.weight<1.0{
-  let direct=cloud_field(relative,footprint,vertical_span);
-  medium=select(direct,mix(direct,cached.medium,cached.weight),cached.weight>0.0);
+ var medium=cloud_field(relative,footprint,vertical_span);
+ if medium.x<=0.0{return medium;}
+ if (u32(f.cloud_drift.z)&4096u)!=0u{
+  let exit=sun_shell_exit(relative);
+  cloud_dbg_cache+=vec4<f32>(0.0,sun_cloud_local_address(exit,0u).z,sun_cloud_local_edge(exit,0u),1.0)*medium.x;
  }
- if (u32(f.cloud_drift.z)&4096u)!=0u{let exit=sun_shell_exit(relative);cloud_dbg_cache+=vec4<f32>(cached.weight,sun_cloud_local_address(exit,0u).z,sun_cloud_local_edge(exit,0u),1.0)*medium.x;}
- if medium.x>0.0{
-  // Explicit diagnostic: independent sun-ray quadrature isolates profile-map
-  // artifacts from view sampling. It omits mountain occlusion, not the planet.
-  if (u32(f.cloud_drift.z)&256u)!=0u{medium.y*=sun_reference_cloud(relative)*sun_planet(relative);}
-  else if (u32(f.cloud_drift.z)&1u)!=0u{medium.y*=sun_planet(relative);}
-  else{
-   // Inside the volume the voxel light replaces the per-sample profile lookup;
-   // the transition shell blends both so no contour appears at the cache edge.
-   var light=cached.light;
-   if cached.weight<1.0{let lookup=sun_cloud_lookup(relative);light=mix(lookup.transmittance*lookup.solid,cached.light,cached.weight);}
-   medium.y*=light*sun_planet(relative);
-  }
- }
+ if (u32(f.cloud_drift.z)&256u)!=0u{medium.y=sun_planet(relative)*sun_reference_cloud(relative);}
+ else if (u32(f.cloud_drift.z)&1u)!=0u||sf.control.x<0.5{medium.y=sun_planet(relative);}
+ else{let light=sun_cloud_lookup(relative);medium.y=light.transmittance*light.solid;}
  return medium;
 }
 struct Cloud { color:vec4<f32>,guide:vec4<f32> }
 // Trace of the last view march for the bit 2048 diagnostic: bins integrated,
 // path integrated, largest bin opacity, shell entry distance.
 var<private> cloud_dbg:vec4<f32>;
-// Density-weighted local-volume weight, fine sun-profile-map weight and
+// Reserved, density-weighted fine sun-profile-map weight and
 // fine-map edge coordinate (texels from the map centre) of the samples of
 // the last march, with the density sum, for the bit 4096 diagnostic (where
 // each crossfade falls along the ray).
 var<private> cloud_dbg_cache:vec4<f32>;
+// A clipped or empty background ray cannot certify cloud behind a closer
+// foreground edge. Reuse differing depths only when both clear the shell.
+fn cloud_guide_matches(guide:vec4<f32>,limit:f32)->bool{
+ return abs(guide.y-limit)<max(100.0,limit*0.05)||(guide.z>0.0&&guide.z<=min(limit,guide.y));
+}
 // Opaque limit of a cloud texel's ray. Below full resolution the ray passes
 // through the corner shared by the full-resolution pixels around the texel
 // centre, and the limit of any one of them is the terrain under a ray half a
@@ -315,27 +273,48 @@ var<private> cloud_dbg_cache:vec4<f32>;
 // Sky pixels are left out: the terrain pixels keep a terrain limit and the
 // composite's validity test sends the sky pixels to their own march.
 fn cloud_limit(pixel:vec2<f32>,rd:vec3<f32>)->f32{
- let q=pixel-0.5;let base=vec2<i32>(floor(q));let fr=fract(q);var sum=0.0;var weight=0.0;
- for(var y=0;y<2;y++){for(var x=0;x<2;x++){let w=select(1.0-fr.x,fr.x,x==1)*select(1.0-fr.y,fr.y,y==1);if w<=0.0{continue;}
-  let xy=clamp(base+vec2<i32>(x,y),vec2<i32>(0),vec2<i32>(f.view.xy)-1);let limit=limit_distance(xy,rd);if limit>1e10{continue;}sum+=limit*w;weight+=w;}}
- if weight<=0.0{return 1e12;}return sum/weight;
+ let q=pixel-0.5;let base=vec2<i32>(floor(q));let fr=fract(q);
+ var distance=0.0;var height=0.0;var weight=0.0;
+ // At the limb a subpixel difference in direction can move the ocean hit
+ // by kilometres. Interpolate surface height, then intersect the volume's
+ // own ray with that surface. This also handles pixels across the sky edge.
+ let anchor=f.temporal.z>0.0&&abs(dot(rd,normalize(f.eye_hi.xyz+f.eye_lo.xyz)))<.4;
+ for(var y=0;y<2;y++){for(var x=0;x<2;x++){
+  let w=select(1.0-fr.x,fr.x,x==1)*select(1.0-fr.y,fr.y,y==1);if w<=0.0{continue;}
+  let xy=clamp(base+vec2<i32>(x,y),vec2<i32>(0),vec2<i32>(f.view.xy)-1);
+  let d=visible_limit(xy,textureLoad(water_in,xy,0).a);if d>1e10{continue;}
+  if anchor{height+=w*sc_radial_height(ray(vec2<f32>(xy)+.5)*d);}
+  distance+=d*w;weight+=w;
+ }}
+ if weight<=0.0{return 1e12;}
+ distance/=weight;
+ if anchor&&distance>2000.0{
+  let hit=sphere(rd,height/weight);
+  if hit.x>0.0{return hit.x;}if hit.y>0.0{return hit.y;}return 1e12;
+ }
+ return distance;
 }
-// ds is this sample's own longitudinal spacing (the bin for a centre sample,
-// the subinterval for a subsample). It also sets the field's filter footprint
-// beyond the pixel footprint: detail finer than the sample spacing cannot be
-// integrated by these samples, it only aliases into blocky moire on distant
-// decks, so the procedural evaluation drops it into its statistical coverage
-// term instead. Bands reach the filter at footprint > scale / 4, so bins up to
-// 512 m (every near and cached bin) are unaffected.
-fn cloud_interval_radiance(rd:vec3<f32>,t:f32,ds:f32,angle:f32,phase:f32)->vec4<f32>{
- let p=f.eye_hi.xyz+(f.eye_lo.xyz+rd*t);let span=abs(dot(normalize(p),rd))*ds+ds*ds/(4.0*f.planet.x);
- let m=sampled_cloud(rd*t,max(max(1.0,t*angle),ds),span);let opacity=1.0-exp(-m.x*ds);
- let ambient=mix(vec3<f32>(0.16,0.21,0.28),vec3<f32>(0.33,0.39,0.47),m.z)*m.w;
- return vec4<f32>((ambient+vec3<f32>(1.8,1.58,1.32)*f.starlight.xyz*m.y*phase)*opacity,1.0-opacity);
+// The bin's footprint filters unresolved detail and its vertical envelope.
+// Its integration weight ds determines the Beer-Lambert opacity.
+fn cloud_interval_radiance(rd:vec3<f32>,t:f32,ds:f32,angle:f32,phase:f32,spacing:f32)->vec4<f32>{
+ let p=f.eye_hi.xyz+(f.eye_lo.xyz+rd*t);let incidence=abs(dot(normalize(p),rd));
+ // At a grazing angle the *width* of the pixel cuts across the cloud top.
+ // Averaging only along the ray leaves a subpixel vertical step hundreds of
+ // km away. Both resolutions use the same smoothly widening physical filter.
+ let angular_width=angle*mix(1.0,f.cloud_far.x,smoothstep(.65*f.cloud_far.y,1.5*f.cloud_far.y,t));
+ let pixel=t*angular_width;
+ let span=length(vec2<f32>(incidence*spacing,pixel*sqrt(max(0.0,1.0-incidence*incidence))))+spacing*spacing/(4.0*f.planet.x);
+ let m=sampled_cloud(rd*t,max(max(1.0,pixel),spacing),span);
+ if m.x<=0.0{return vec4<f32>(0,0,0,1);}
+ let opacity=1.0-exp(-m.x*ds);
+ // Light scattered into shadowed cloud is cooler; the sun-facing skin
+ // retains the warm directional lobe. Daylight gates the diffuse fill.
+ let ambient=mix(vec3<f32>(0.14,0.19,0.28),vec3<f32>(0.38,0.45,0.55),m.z)*m.w;
+ let diffuse=vec3<f32>(0.17,0.16,0.14)*sqrt(m.y)*m.w*f.starlight.xyz;
+ return vec4<f32>((ambient+diffuse+vec3<f32>(1.8,1.58,1.32)*f.starlight.xyz*m.y*phase)*opacity,1.0-opacity);
 }
 fn integrate_cloud(rd:vec3<f32>,limit:f32,steps:u32,angle:f32)->Cloud{return integrate_cloud_range(rd,limit,steps,angle,0.0,1e30);}
-// Bins whose start lies in [t_from, t_to) are integrated; the bin layout is a
-// property of the ray alone, so two ranges partition one march exactly.
+// Both passes use the same bins and clip them at the same metric distance.
 fn integrate_cloud_range(rd:vec3<f32>,limit:f32,steps:u32,angle:f32,t_from:f32,t_to:f32)->Cloud {
  // Intersect the OUTER shell, then subtract the inner empty interval. A
  // ray can enter cloud again beyond that gap without hitting the planet.
@@ -352,11 +331,11 @@ fn integrate_cloud_range(rd:vec3<f32>,limit:f32,steps:u32,angle:f32,t_from:f32,t
  let gap=max(0.0,gap_end-gap_start);let occupied=extent-gap;
  if occupied<=0.0{return Cloud(vec4<f32>(0,0,0,1),vec4<f32>(0,limit,0,0));}
  let count=steps*select(1u,4u,(u32(f.cloud_drift.z)&4u)!=0u);
- var T=1.0;var color=vec3<f32>(0);var first=0.0;let mu=dot(rd,f.sun.xyz);
+ var T=1.0;var color=vec3<f32>(0);var first=0.0;var depthMoment=0.0;let mu=dot(rd,f.sun.xyz);
  let phase=0.24+0.12/pow(max(0.10,1.36-1.2*mu),1.5)+0.08*pow(max(0.0,-mu),2.0);
  // One continuous logarithmic budget over occupied intervals. Only the bin
  // crossing the gap is split: at most count+1 intervals, each with bounded
- // quadrature (up to nine field queries). No separately
+ // quadrature (up to two field queries). No separately
  // rounded near/far step counts that would jump at the inner-shell crossing.
  var finished=false;
  for(var i=0u;i<count;i++){
@@ -367,48 +346,55 @@ fn integrate_cloud_range(rd:vec3<f32>,limit:f32,steps:u32,angle:f32,t_from:f32,t
    let after=qa>=gap_start||part==1u;
    let a=select(qa,max(qa,gap_start)+gap,after);
    let b=select(min(qb,gap_start),qb+gap,after);
+   // Split the bin itself. Assigning a whole bin by its start can leave a
+   // gap or overlap when the far result is reconstructed from adjacent rays.
    let ta=start+scale*(exp(a)-1.0);
-   // Bin starts grow monotonically: past the opaque limit or this range's
-   // end nothing remains; before the range start the bin belongs elsewhere.
    if ta>=end||ta>=t_to{finished=true;break;}
-   if ta<t_from{continue;}
    let tb=min(end,start+scale*(exp(b)-1.0));
-   if tb<=ta{continue;}
+   let covered=min(t_to,tb)-max(t_from,ta);if covered<=0.0{continue;}
    let ds=tb-ta;let t=(ta+tb)*0.5;
-   var segment=vec4<f32>(0,0,0,exp(-0.00001*ds));
+   var segment=vec4<f32>(0,0,0,exp(-0.00001*covered));
    // The integration interval is longitudinal, not a lateral pixel footprint.
    // Using ds here changed the noise spectrum in distance-aligned sheets, and
    // clipping the final bin at terrain changed coverage along triangle edges.
    if (u32(f.cloud_drift.z)&8u)==0u{
-    // Long horizon bins can skip entire puffs even with an averaged envelope.
-    // Integrate shape and light at eight subintervals; blend in continuously to
-    // avoid a contour where the quadrature changes. Pixel filtering stays
-    // lateral and independent of the final opaque-depth truncation. The
-    // centre sample (j=0) and the eight subsamples share one call site.
-    let blend=smoothstep(128.0,512.0,ds);var coarse=vec4<f32>(0,0,0,1);var fine=vec4<f32>(0,0,0,1);
-    // Inside the local volume the field is already band-limited to its
-    // voxels, so subsamples at half a voxel suffice; the procedural far field
-    // keeps eight to catch kilometre-scale puffs in long bins.
-    var subsamples=8u;
-    if blend>0.0&&cloud_cache_address(rd*t,sc_radial_height(rd*t)).weight>=1.0{subsamples=clamp(u32(round(ds/(CLOUD_CACHE_CELL*0.5))),1u,8u);}
-    let first_sample=select(1u,0u,blend<1.0);let last_sample=select(1u,subsamples+1u,blend>0.0);let spacing=ds/f32(subsamples);
-    for(var j=first_sample;j<last_sample;j++){
-     let sub=j>0u;
-     let s=cloud_interval_radiance(rd,select(t,ta+(f32(j)-0.5)*spacing,sub),select(ds,spacing,sub),angle,phase);
-     if sub{fine=vec4<f32>(fine.rgb+fine.a*s.rgb,fine.a*s.a);}else{coarse=s;}
+    // Two-point Gauss quadrature for long bins. Both abscissae move
+    // continuously out from the midpoint, so crossing the refinement
+    // threshold never changes the sampled field abruptly.
+    let spread=smoothstep(192.0,768.0,ds);
+    let half_bins=select(1u,2u,spread>0.0);
+    var integrated=vec4<f32>(0,0,0,1);
+    for(var j=0u;j<half_bins;j++){
+     let sample_t=t+(f32(j)*2.0-1.0)*0.28867513*ds*spread;
+     // A resolution split divides optical length only. Moving or filtering
+     // the sample itself at that boundary changed the cloud on either side.
+     let bin_width=ds/f32(half_bins);let bin_start=ta+f32(j)*bin_width;
+     let width=min(t_to,bin_start+bin_width)-max(t_from,bin_start);if width<=0.0{continue;}
+     let filtered_span=ds*(1.0-0.5*spread);
+     let s=cloud_interval_radiance(rd,sample_t,width,angle,phase,filtered_span);
+     integrated=vec4<f32>(integrated.rgb+integrated.a*s.rgb,integrated.a*s.a);
     }
-    segment=mix(coarse,fine,blend);
+    segment=integrated;
    }
-   cloud_dbg.x+=1.0;cloud_dbg.y+=ds;cloud_dbg.z=max(cloud_dbg.z,1.0-segment.a);
+   cloud_dbg.x+=1.0;cloud_dbg.y+=covered;cloud_dbg.z=max(cloud_dbg.z,1.0-segment.a);
    if segment.a>=1.0{continue;}if first==0.0{first=t;}
+   depthMoment+=T*(1.0-segment.a)*t;
    color+=T*segment.rgb;T*=segment.a;
   }
  }
 
- return Cloud(vec4<f32>(color,T),vec4<f32>(first,limit,end,0));
+ return Cloud(vec4<f32>(color,T),vec4<f32>(first,limit,shell_end,depthMoment));
+}
+// Push the lower-resolution segment away continuously on ascent. Diagnostics
+// trace the complete main ray so coverage and distance counters stay comparable.
+fn cloud_split_distance()->f32{
+ if f.cloud_far.x<2.0||(u32(f.cloud_drift.z)&(2048u|4096u))!=0u{return 1e30;}
+ return f.cloud_far.y+max(0.0,f.eye_hi.w-15000.0)*32.0;
 }
 @compute @workgroup_size(8,8)
-fn cloud_pass(@builtin(global_invocation_id) id:vec3<u32>){let size=textureDimensions(cloud_out);if any(id.xy>=size){return;}let pixel=(vec2<f32>(id.xy)+0.5)*f.view.xy/vec2<f32>(size);let rd=ray(pixel);let limit=cloud_limit(pixel,rd);
+fn cloud_pass(@builtin(global_invocation_id) id:vec3<u32>){let size=textureDimensions(cloud_out);if any(id.xy>=size){return;}let pixel=(vec2<f32>(id.xy)+0.5)*f.view.xy/vec2<f32>(size);// March a fixed pixel lattice. Jittering the entire low-rate volume changes
+ // all its reconstructed pixels together, particularly on a grazing ray.
+ let rd=view_ray(pixel);let limit=cloud_limit(pixel-f.temporal.xy,rd);
  // Explicit diagnostic only: measure the production relative-height helper
  // against a rounded world-height subtraction at identical 32 m ray points.
  if (u32(f.cloud_drift.z)&16u)!=0u{
@@ -435,7 +421,7 @@ fn cloud_pass(@builtin(global_invocation_id) id:vec3<u32>){let size=textureDimen
   textureStore(cloud_out,vec2<i32>(id.xy),vec4<f32>(length(a),length(b),dot(a,b),length(cross(a,b))));
   textureStore(cloud_guide_out,vec2<i32>(id.xy),vec4<f32>(0,limit,0,0));return;
  }
- // Probe both sides of the actual local-cache boundary, with a fixed metric
+ // Probe both sides of the former local-cache boundary, with a fixed metric
  // pixel footprint. Red/green are the production densities 1m apart.
  if (u32(f.cloud_drift.z)&128u)!=0u{
   let n=normalize(f.eye_hi.xyz+f.eye_lo.xyz);let u=cloud_axis(n);let v=cross(n,u);
@@ -445,21 +431,28 @@ fn cloud_pass(@builtin(global_invocation_id) id:vec3<u32>){let size=textureDimen
   textureStore(cloud_out,vec2<i32>(id.xy),vec4<f32>(a*1000.0,b*1000.0,0,1));
   textureStore(cloud_guide_out,vec2<i32>(id.xy),vec4<f32>(0,limit,0,0));return;
  }
- let split=select(1e30,f.cloud_far.y,f.cloud_far.x>=2.0&&f.eye_hi.w<20000.0);
- var far=vec4<f32>(0,0,0,1);var far_first=0.0;var near_end=split;
- if limit>split{
+ let split=cloud_split_distance();
+ var far=vec4<f32>(0,0,0,1);var far_first=0.0;var farMoment=0.0;var near_end=split;
+ if limit>split&&sphere(rd,cloud_shell_top()).y>split{
   let fsize=textureDimensions(cloud_far);let q=(vec2<f32>(id.xy)+0.5)/vec2<f32>(size)*vec2<f32>(fsize)-0.5;let base=vec2<i32>(floor(q));let frac=fract(q);var sum=vec4<f32>(0);var weight=0.0;var nearest=1e30;
-  for(var y=0;y<2;y++){for(var x=0;x<2;x++){let coord=clamp(base+vec2<i32>(x,y),vec2<i32>(0),vec2<i32>(fsize)-1);let g=textureLoad(cloud_far_guide,coord,0);let w=select(1.0-frac.x,frac.x,x==1)*select(1.0-frac.y,frac.y,y==1);let valid=abs(g.y-limit)<max(100.0,limit*0.05)||g.x<min(limit,g.y);if valid&&w>0.0{sum+=textureLoad(cloud_far,coord,0)*w;weight+=w;if g.x>0.0{nearest=min(nearest,g.x);}}}}
-  if weight>0.001{far=sum/weight;if nearest<1e29{far_first=nearest;}}else{near_end=1e30;}
+  for(var y=0;y<2;y++){for(var x=0;x<2;x++){let coord=clamp(base+vec2<i32>(x,y),vec2<i32>(0),vec2<i32>(fsize)-1);let g=textureLoad(cloud_far_guide,coord,0);let w=select(1.0-frac.x,frac.x,x==1)*select(1.0-frac.y,frac.y,y==1);if cloud_guide_matches(g,limit)&&w>0.0{sum+=textureLoad(cloud_far,coord,0)*w;weight+=w;farMoment+=w*g.w;if g.x>0.0{nearest=min(nearest,g.x);}}}}
+  if weight>0.0001{
+   far=sum;if nearest<1e29{far_first=nearest;}
+   if weight<.9999{
+    let exact=integrate_cloud_range(rd,limit,u32(f.lod.z),2.0*f.view.w/f32(size.y),split,1e30);
+    far+=(1.0-weight)*exact.color;farMoment+=(1.0-weight)*exact.guide.w;if far_first==0.0{far_first=exact.guide.x;}
+   }
+  }else{near_end=1e30;}
  }
  var c=integrate_cloud_range(rd,limit,u32(f.lod.z),2.0*f.view.w/f32(size.y),0.0,near_end);
  // Explicit diagnostic (bit 2048): the march trace instead of the colour,
  // bins integrated, path integrated, opaque limit minus shell entry, T.
  if (u32(f.cloud_drift.z)&2048u)!=0u{textureStore(cloud_out,vec2<i32>(id.xy),vec4<f32>(cloud_dbg.xy,limit-cloud_dbg.w,c.color.a));textureStore(cloud_guide_out,vec2<i32>(id.xy),c.guide);return;}
- // Explicit diagnostic (bit 4096): the density-weighted local-volume weight,
+ // Explicit diagnostic (bit 4096): reserved zero, density-weighted
  // fine sun-profile-map weight and fine-map edge coordinate of the near
  // march, and its opacity.
  if (u32(f.cloud_drift.z)&4096u)!=0u{let total=max(1.0e-6,cloud_dbg_cache.w);textureStore(cloud_out,vec2<i32>(id.xy),vec4<f32>(cloud_dbg_cache.xyz/total,1.0-c.color.a));textureStore(cloud_guide_out,vec2<i32>(id.xy),c.guide);return;}
+ c.guide.w+=c.color.a*farMoment;
  c.color=vec4<f32>(c.color.rgb+c.color.a*far.rgb,c.color.a*far.a);
  if c.guide.x==0.0{c.guide.x=far_first;}
  if f.wind.w>0.5&&c.guide.x>0.0&&f.wind.z>0.0&&f.wind.z<0.1 {
@@ -473,19 +466,15 @@ fn cloud_pass(@builtin(global_invocation_id) id:vec3<u32>){let size=textureDimen
 }
 @compute @workgroup_size(8,8)
 fn cloud_far_pass(@builtin(global_invocation_id) id:vec3<u32>){
- let size=textureDimensions(cloud_far_out);if any(id.xy>=size)||f.cloud_far.x<2.0||f.eye_hi.w>=20000.0{return;}
- let near_size=vec2<f32>(f.cloud_far.zw);let pixel=(vec2<f32>(id.xy)+0.5)*f.view.xy/vec2<f32>(size);let rd=ray(pixel);
- // The far texel serves the most distant limit among the cloud pixels it
- // covers, so sky stays exact; nearer opaque pixels fail the validity test
- // and march their own far segment in the near pass.
- let block=i32(f.cloud_far.x);var limit=0.0;
- for(var y=0;y<block;y++){for(var x=0;x<block;x++){
-  let cloud_pixel=(vec2<f32>(vec2<i32>(id.xy)*block+vec2<i32>(x,y))+0.5)*f.view.xy/near_size;
-  let xy=clamp(vec2<i32>(cloud_pixel),vec2<i32>(0),vec2<i32>(f.view.xy)-1);
-  limit=max(limit,limit_distance(xy,rd));
- }}
- let split=f.cloud_far.y;
- if (u32(f.cloud_drift.z)&240u)!=0u||limit<=split{textureStore(cloud_far_out,vec2<i32>(id.xy),vec4<f32>(0,0,0,1));textureStore(cloud_far_guide_out,vec2<i32>(id.xy),vec4<f32>(0,limit,0,0));return;}
+ let size=textureDimensions(cloud_far_out);if any(id.xy>=size)||f.cloud_far.x<2.0{return;}
+ let near_size=vec2<f32>(f.cloud_far.zw);let pixel=(vec2<f32>(id.xy)+0.5)*f.view.xy/vec2<f32>(size);let rd=view_ray(pixel);
+ // Locate the fixed far ray in the jittered depth buffer just as for the
+ // near ray. Picking the farthest corner made one foreground/sky change
+ // redirect the full block to a different march on alternating frames.
+ // The near pass traces the missing share at depth discontinuities.
+ let limit=cloud_limit(pixel-f.temporal.xy,rd);
+ let split=cloud_split_distance();
+ if (u32(f.cloud_drift.z)&240u)!=0u||limit<=split||sphere(rd,cloud_shell_top()).y<=split{textureStore(cloud_far_out,vec2<i32>(id.xy),vec4<f32>(0,0,0,1));textureStore(cloud_far_guide_out,vec2<i32>(id.xy),vec4<f32>(0,limit,0,0));return;}
  let c=integrate_cloud_range(rd,limit,u32(f.lod.z),2.0*f.view.w/near_size.y,split,1e30);
  textureStore(cloud_far_out,vec2<i32>(id.xy),c.color);textureStore(cloud_far_guide_out,vec2<i32>(id.xy),c.guide);
 }

@@ -4,6 +4,20 @@ import {clipRoad,ROAD_LIMIT} from '../web/field/roads.js';
 const meta=buildingMetadata({height:'24 m','building:levels':3,'roof:shape':'gabled','roof:height':4,'building:material':'brick','building:colour':'#cc6644'},9);
 assert.equal(meta.height,24);assert.equal(meta.roofKind,2);assert.equal(meta.roofHeight,4);assert.equal(meta.style,1);assert.equal(meta.estimated,false);
 assert.equal(buildingMetadata({'building:levels':4},9).height,12.4);
+const ring=coords=>Object.assign(coords,{closed:true});
+const rectangle=ring([[100,100],[200,100],[200,150],[100,150]]);
+const courtyard=ring([[125,115],[125,135],[150,135],[150,115]]);
+function edgeFlags(paths,properties={}){
+ const tile={z:14,x:8516,y:5467,layers:{building:{extent:4096,features:[{id:17,properties,paths}]}}};
+ const source=buildingSources([tile]);const words=new Uint32Array(source.points);
+ return Array.from({length:words.length/4},(_,i)=>words[4*i+3]);
+}
+const flags=edgeFlags([rectangle,courtyard]);
+assert.equal(flags.slice(0,4).filter(v=>v===2).length,1,'one exterior wall has an entrance');
+assert.ok(flags.slice(4).every(v=>v===0),'courtyard walls retain windows');
+assert.ok(edgeFlags([rectangle],{min_height:3,height:9}).every(v=>v===0),'no doors on raised parts');
+const clippedFlags=edgeFlags([ring([[-10,100],[200,100],[200,150],[-10,150]])]);
+assert.ok(clippedFlags.includes(1)&&!clippedFlags.includes(2),'clipped fragments retain cut walls without duplicating entrances');
 assert.deepEqual(clipRoad([-20,50],[120,50],100),[[0,50],[100,50]]);
 assert.equal(clipRoad([-20,-10],[-10,50],100),null);
 const feature={properties:{class:'primary',width:8},paths:[[[100,200],[300,200]]]};

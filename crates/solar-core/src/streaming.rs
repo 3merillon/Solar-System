@@ -505,6 +505,9 @@ impl Stream {
         let tick = self.tick;
         let config = self.config;
         let radial = field::normalized(camera.position);
+        // Rank page footprints in the local ground frame. A camera ten metres
+        // above a mountain needs the same fine pages as one ten metres above a beach.
+        let footprint_eye = field::mul(radial, config.radius + camera.clearance.max(0.5));
         let (face, u, v) = direction_to_chart(radial);
         let speed = field::length(camera.velocity);
         // Look ahead one second along the ground, bounded so a fast camera still has rings.
@@ -570,7 +573,7 @@ impl Stream {
                     if level > finest {
                         continue;
                     }
-                    let offset = field::sub(field::mul(center, config.radius), camera.position);
+                    let offset = field::sub(field::mul(center, config.radius), footprint_eye);
                     let to_page = field::normalized(offset);
                     let facing = field::dot(to_page, camera.forward);
                     // Pages in view go first: order only, so a turn never changes what is
@@ -1024,6 +1027,26 @@ mod tests {
             assert!(channel.spec.sharp.is_empty());
             assert!(channel.resident.keys().any(|key| key.pinned()));
         }
+    }
+    #[test]
+    fn mountain_flight_uses_ground_clearance_to_order_detail_pages() {
+        let low = camera(6.63, 46.52, 10.0, [0.0; 3]);
+        let high = StreamCamera {
+            position: field::mul(field::normalized(low.position), R + 4010.0),
+            ..low
+        };
+        let priorities = |cam: &StreamCamera| {
+            let mut s = stream(1125);
+            s.update(cam);
+            s.wanted(CHANNEL_HEIGHT)
+                .iter()
+                .filter(|(k, _)| k.level >= 9)
+                .map(|(k, priority)| (*k, priority.round() as i32))
+                .collect::<Vec<_>>()
+        };
+        let expected = priorities(&low);
+        assert!(!expected.is_empty());
+        assert_eq!(priorities(&high), expected);
     }
     #[test]
     fn a_complete_planet_always_answers() {

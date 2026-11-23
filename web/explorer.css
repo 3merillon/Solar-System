@@ -6,11 +6,8 @@ body{margin:0;overflow:hidden;touch-action:pan-x pan-y;overscroll-behavior:none;
 input,textarea{-webkit-user-select:text;user-select:text}
 [hidden]{display:none!important}
 canvas{display:block;width:100vw;height:100vh;background:#02050a;touch-action:none;-webkit-user-select:none;user-select:none}
-/* The world image keeps its shape inside the window, with bars at the sides or at top and bottom. The bars are padding worked out from the image's
-   aspect (--world-aspect, set by web/explorer.js with the canvas size), not object-fit: WebKit shows a canvas drawn by a worker at its pixel size,
-   unscaled and top-centred, when object-fit is contain (iPad, Safari 27.0.1). The box stays the whole window, so pointers and overlays are unchanged. */
-#world{--world-aspect:1.7777778;--world-h:100vh;height:var(--world-h);padding:max(0px,calc((var(--world-h) - 100vw / var(--world-aspect)) / 2)) max(0px,calc((100vw - var(--world-h) * var(--world-aspect)) / 2))}
-@supports(height:100dvh){#world{--world-h:100dvh}}
+/* Keep showing the last completed frame across the viewport while the worker resizes. */
+#world{width:100vw;height:100vh;width:100dvw;height:100dvh}
 .num,output,#hud-readout,#time-clock,#time-jd{font-variant-numeric:tabular-nums}
 kbd{font:10px ui-monospace,Consolas,monospace;color:#b7c3cc;border:1px solid #ffffff2a;border-bottom-width:2px;padding:0 4px;border-radius:3px;background:#ffffff08;white-space:nowrap}
 button{font:inherit;font-size:12px;color:var(--ink);background:var(--well);border:1px solid var(--line);border-radius:5px;padding:6px 10px;min-height:32px;cursor:pointer;transition:background .12s,border-color .12s}
@@ -112,6 +109,8 @@ dl.keys{display:grid;grid-template-columns:max-content 1fr;gap:5px 10px;margin:4
 .toggles{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}.toggles button{min-height:32px;padding:4px 6px;font-size:11.5px}.toggles kbd{margin-left:4px;font-size:9px}
 #solar-landmark{margin-top:8px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:#ffffff06}#solar-landmark p{overflow-wrap:anywhere;margin:4px 0}#solar-landmark .solar-row{display:flex;justify-content:space-between;align-items:center;gap:8px}#landmark-close{padding:0 8px;min-height:26px}#solar-landmark .solar-controls{margin-top:6px}
 #solar-overlay,#solar-landmarks{position:fixed;inset:0;width:100%;height:100%;z-index:1;pointer-events:none;background:transparent}
+#selection-entry{position:fixed;z-index:2;top:calc(48px + var(--safe-t));right:calc(var(--gap) + var(--safe-r));width:max-content;max-width:min(32rem,calc(100vw - 2 * var(--gap) - var(--safe-l) - var(--safe-r)));padding:.65rem .9rem;border-radius:6px;background:rgb(7 13 19 / 25%);color:#f5f7f8;text-shadow:0 1px 3px #000,0 0 2px #000;line-height:1.5;overflow-wrap:anywhere;pointer-events:none;user-select:none}
+#selection-entry strong{font-size:1.15rem}#selection-entry div{color:#dce6ed}#selection-entry p{margin:.25rem 0 0}#selection-entry p:empty{display:none}
 
 /* Startup. */
 #startup{position:fixed;z-index:5;left:50%;top:50%;transform:translate(-50%,-50%);width:min(460px,calc(100vw - 32px));padding:24px;background:var(--panel-solid);border:1px solid var(--line-strong);border-radius:8px;box-shadow:0 20px 80px #0009}#startup .eyebrow{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}#startup h2{font-size:18px;font-weight:500;margin:10px 0}#startup-detail{font-size:12px;color:#bcc6cd;overflow-wrap:anywhere;white-space:pre-wrap}#startup-progress{width:100%;height:6px;accent-color:var(--accent)}#startup-time{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}#startup-retry{margin-top:8px}
@@ -129,7 +128,7 @@ dl.keys{display:grid;grid-template-columns:max-content 1fr;gap:5px 10px;margin:4
 #touch-throttle{position:absolute;right:calc(max(14px,var(--safe-r)) + 130px);bottom:max(18px,var(--safe-b));width:42px;height:128px;border-radius:21px;background:#ffffff10;border:1px solid #ffffff2e;pointer-events:auto;touch-action:none;backdrop-filter:blur(6px)}
 #touch-throttle-knob{position:absolute;left:4px;top:4px;width:32px;height:32px;border-radius:50%;background:#9fd4e4bb;box-shadow:0 2px 10px #0006;pointer-events:none}
 .touch-ui #dock{left:calc(max(18px,var(--safe-l)) + 140px);right:calc(max(14px,var(--safe-r)) + 186px);width:auto;transform:none}
-.touch-ui #flight-hud label.speed{display:none}
+.touch-ui #flight-hud label.speed,.touch-ui #hud-go{display:none}
 @media(orientation:portrait){.touch-ui #dock{left:var(--gap);right:var(--gap);bottom:calc(max(18px,var(--safe-b)) + 156px)}}
 .touch-ui.panel-sheet:not(.hidden-ui) #dock,.touch-ui.panel-sheet:not(.hidden-ui) #touch-controls{display:none}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}

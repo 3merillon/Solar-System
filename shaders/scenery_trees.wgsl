@@ -20,22 +20,23 @@ fn sc_group(c:u32,g:u32)->vec3<u32>{
   case 1u:{switch g{case 0u:{return vec3<u32>(1u,8u,10u);}case 1u:{return vec3<u32>(48u,5u,4u);}case 2u:{return vec3<u32>(192u,3u,2u);}case 3u:{return vec3<u32>(512u,1u,1u);}default:{}}}
   case 2u:{switch g{case 0u:{return vec3<u32>(1u,5u,5u);}case 1u:{return vec3<u32>(48u,3u,1u);}case 2u:{return vec3<u32>(128u,1u,1u);}default:{}}}
   case 3u:{if g==0u{return vec3<u32>(6u,16u,16u);}}
-  case 4u:{if g==0u{return vec3<u32>(6u,6u,6u);}}
+  case 4u:{if g==0u{return vec3<u32>(6u,8u,8u);}}
   case 5u:{switch g{case 0u:{return vec3<u32>(20u,1u,4u);}case 1u:{return vec3<u32>(3u,1u,1u);}default:{}}}
   case 6u:{switch g{case 0u:{return vec3<u32>(10u,1u,4u);}case 1u:{return vec3<u32>(4u,1u,2u);}default:{}}}
   case 7u:{if g==0u{return vec3<u32>(36u,2u,2u);}}
   case 8u:{if g==0u{return vec3<u32>(7u,1u,3u);}}
   case 9u:{switch g{case 0u:{return vec3<u32>(3u,3u,2u);}case 1u:{return vec3<u32>(28u,1u,1u);}default:{}}}
   case 10u:{if g==0u{return vec3<u32>(8u,1u,4u);}}
+  case 11u:{if g==0u{return vec3<u32>(6u,2u,2u);}}
   default:{}
  }
  return vec3<u32>(0u);
 }
 // Vertices per variant, quads, first index and variants of each class (checked against sc_group by a Rust test).
-fn sc_class_verts(c:u32)->u32{switch c{case 0u:{return 23825u;}case 1u:{return 5891u;}case 2u:{return 932u;}case 3u:{return 1734u;}case 4u:{return 294u;}case 5u:{return 212u;}case 6u:{return 124u;}case 7u:{return 324u;}case 8u:{return 56u;}case 9u:{return 148u;}default:{return 0u;}}}
-fn sc_class_quads(c:u32)->u32{switch c{case 0u:{return 11120u;}case 1u:{return 2704u;}case 2u:{return 297u;}case 3u:{return 1536u;}case 4u:{return 216u;}case 5u:{return 83u;}case 6u:{return 48u;}case 7u:{return 144u;}case 8u:{return 21u;}case 9u:{return 46u;}case 10u:{return 32u;}default:{return 0u;}}}
+fn sc_class_verts(c:u32)->u32{switch c{case 0u:{return 23825u;}case 1u:{return 5891u;}case 2u:{return 932u;}case 3u:{return 1734u;}case 4u:{return 486u;}case 5u:{return 212u;}case 6u:{return 124u;}case 7u:{return 324u;}case 8u:{return 56u;}case 9u:{return 148u;}default:{return 0u;}}}
+fn sc_class_quads(c:u32)->u32{switch c{case 0u:{return 11120u;}case 1u:{return 2704u;}case 2u:{return 297u;}case 3u:{return 1536u;}case 4u:{return 384u;}case 5u:{return 83u;}case 6u:{return 48u;}case 7u:{return 144u;}case 8u:{return 21u;}case 9u:{return 46u;}case 10u:{return 32u;}case 11u:{return 24u;}default:{return 0u;}}}
 fn sc_class_first(c:u32)->u32{var s=0u;for(var k=0u;k<c;k++){s+=sc_class_quads(k)*6u;}return s;}
-const SC_TEMPLATE_QUADS:u32=16247u;
+const SC_TEMPLATE_QUADS:u32=16439u;
 fn sc_tree_ages()->u32{return max(1u,min(3u,f.tier_d.y));}
 fn sc_tree_variants()->u32{return SC_SPECIES*sc_tree_ages();}
 fn sc_variants()->u32{return sc_tree_variants()+SC_ROCK_VARIANTS;}
@@ -502,7 +503,7 @@ fn scenery_cover_vertices(@builtin(global_invocation_id) id:vec3<u32>){
 @compute @workgroup_size(64)
 fn scenery_templates(@builtin(global_invocation_id) id:vec3<u32>){
  var q=id.x;if q>=SC_TEMPLATE_QUADS{return;}var c=0u;
- loop{if c>SC_CLASSES{return;}if q<sc_class_quads(c){break;}q-=sc_class_quads(c);c++;}
+ loop{if c>11u{return;}if q<sc_class_quads(c){break;}q-=sc_class_quads(c);c++;}
  let first=sc_class_first(c)+q*6u;var qbase=0u;var vbase=0u;
  for(var g=0u;g<6u;g++){
   let d=sc_group(c,g);if d.x==0u{break;}let per_q=d.y*d.z;let per_v=(d.y+1u)*(d.z+1u);
@@ -708,7 +709,18 @@ fn sc_bark(species:u32,x:f32,y:f32,height:f32,radius:f32,footprint:f32,seed:u32,
  return ScMat(albedo*mix(0.7,1.0,h.x),mix(0.95,0.8,h.x),vec2<f32>(hx-h.x,hy-h.x)/e*depth*fade);
 }
 // Rock albedo in the rock's own frame (metres), with this object's seed. wet 0..1 near water, moist 0..1, airless.
-fn sc_rock_material(family:u32,p:vec3<f32>,n_up:f32,seed:u32,moist:f32,wet:f32,airless:bool,footprint:f32,low:f32)->ScMat{
+struct ScRockMaterial {albedo:vec3<f32>,rough:f32,gradient:vec3<f32>}
+// Value and analytic gradient of the same smooth 3-D grain. All cube faces
+// sample one mineral field, including where their texture tangents disagree.
+fn sc_grain(p:vec3<f32>,seed:u32)->vec4<f32>{
+ let i=vec3<i32>(floor(p));let t=fract(p);let w=t*t*(3.0-2.0*t);let dw=6.0*t*(1.0-t);
+ let a=vec4<f32>(sc_vhash3(i,seed),sc_vhash3(i+vec3<i32>(0,1,0),seed),sc_vhash3(i+vec3<i32>(0,0,1),seed),sc_vhash3(i+vec3<i32>(0,1,1),seed));
+ let j=i+vec3<i32>(1,0,0);
+ let b=vec4<f32>(sc_vhash3(j,seed),sc_vhash3(j+vec3<i32>(0,1,0),seed),sc_vhash3(j+vec3<i32>(0,0,1),seed),sc_vhash3(j+vec3<i32>(0,1,1),seed));
+ let x=mix(a,b,w.x);let y=mix(x.xz,x.yw,w.y);let dx=b-a;
+ return vec4<f32>(dw*vec3<f32>(mix(mix(dx.x,dx.y,w.y),mix(dx.z,dx.w,w.y),w.z),mix(x.y-x.x,x.w-x.z,w.z),y.y-y.x),mix(y.x,y.y,w.z));
+}
+fn sc_rock_material(family:u32,p:vec3<f32>,n_up:f32,seed:u32,moist:f32,wet:f32,airless:bool,footprint:f32,low:f32)->ScRockMaterial{
  let q=p+vec3<f32>(sc_random(seed),sc_random(seed+1u),sc_random(seed+2u))*97.0;
  var base=vec3<f32>(0.30,0.29,0.27);
  switch family{
@@ -720,29 +732,33 @@ fn sc_rock_material(family:u32,p:vec3<f32>,n_up:f32,seed:u32,moist:f32,wet:f32,a
   default:{base=vec3<f32>(0.26,0.25,0.24);}
  }
  let fine=1.0-smoothstep(0.003,0.02,footprint);let mid=1.0-smoothstep(0.03,0.25,footprint);
- var col=base*(0.85+0.3*sc_fbm(q*0.8,seed+5u,3u)*mid);
+ let mineral=sc_fbm(q*0.8,seed+5u,3u);
+ var col=base*(.94+.38*mineral*mid);
+ var grain=vec4<f32>(0);if fine>0.0{grain=sc_grain(q*32.0,seed+7u);}
  // Mineral grain: granite's speckle of light and dark crystals; finer grit elsewhere.
- if family==3u{let g=sc_cells(q.xz*55.0+q.y*13.0,seed+6u);col=mix(col,select(vec3<f32>(0.62,0.55,0.5),vec3<f32>(0.08,0.08,0.08),g.z<0.25),step(0.6,abs(g.z-0.5)*2.0)*0.6*fine);}
- else{col*=1.0+0.18*sc_vnoise(q*60.0,seed+7u)*fine;}
- // Solar-System v2 along a dipping plane (slabs most, a hint in blocks), never the same bands on two rocks.
- let dip=normalize(vec3<f32>(sc_random(seed+8u)-0.5,2.5,sc_random(seed+9u)-0.5));let s=dot(q,dip)*select(1.2,3.5,family==1u)+sc_fbm(q*0.5,seed+10u,2u)*1.5;
- if family==1u||family==0u{col*=mix(1.0,0.82+0.3*sc_random(hash(u32(floor(s))+seed)),select(0.35,0.9,family==1u)*mid);}
- // Quartz veins: thin pale bands of one plane family.
- let vn=normalize(vec3<f32>(sc_random(seed+11u)-0.5,sc_random(seed+12u)-0.5,sc_random(seed+13u)-0.5));let vp=dot(q,vn)*1.7+0.4*sc_vnoise(q*1.3,seed+14u);
- let vein=(1.0-smoothstep(0.012,0.03,abs(fract(vp)-0.5)*0.5))*step(0.55,sc_random(seed+15u))*mid;col=mix(col,vec3<f32>(0.66,0.64,0.6),vein*0.8);
+ if family==3u&&fine>0.0{let g=sc_cells(q.xz*55.0+q.y*13.0,seed+6u);col=mix(col,select(vec3<f32>(0.62,0.55,0.5),vec3<f32>(0.08,0.08,0.08),g.z<0.25),step(0.6,abs(g.z-0.5)*2.0)*0.6*fine);}
+ else{col*=1.0+0.17*grain.w*fine;}
+ // Bed boundaries follow a dipping plane and soften across a footprint.
+ if mid>0.0&&(family==1u||family==0u){let dip=normalize(vec3<f32>(sc_random(seed+8u)-0.5,2.5,sc_random(seed+9u)-0.5));let s=dot(q,dip)*select(1.2,3.5,family==1u)+sc_fbm(q*0.5,seed+10u,2u)*1.5;
+ let layer=bitcast<u32>(i32(floor(s)));let blend=smoothstep(.76,1.0,fract(s));col*=1.0+(.25*mix(sc_random(seed+layer),sc_random(seed+layer+1u),blend)-.125)*select(.35,.9,family==1u)*mid;}
+ // Broken mineral seams in terrestrial slabs and granite.
+ if mid>0.0&&!airless&&(family==1u||family==3u){let vn=normalize(vec3<f32>(sc_random(seed+11u)-0.5,sc_random(seed+12u)-0.5,sc_random(seed+13u)-0.5));let vp=dot(q,vn)*1.7+0.4*sc_vnoise(q*1.3,seed+14u);
+ let vein=(1.0-smoothstep(.012,.045,abs(fract(vp)-.5)))*smoothstep(-.05,.35,mineral)*mid;
+ col=mix(col,base*1.65,vein*.55);}
  // Weathering: exposed upper faces bleach a little; airless rock mantled with dust on top.
  col*=mix(0.88,1.08,smoothstep(-0.2,0.8,n_up));
- if airless{let dust=smoothstep(0.2,0.8,n_up)*0.6;col=mix(col,vec3<f32>(0.28,0.27,0.26),dust);}
+ if airless{let dust=smoothstep(.10,.85,n_up+mineral*.35)*.55;
+  let mantle=select(vec3<f32>(.28,.27,.26),vec3<f32>(.34,.185,.112),f.solar.w>1.5&&f.solar.w<2.5);
+  col=mix(col,mantle*(1.0+.25*mineral+.09*grain.w*fine),dust);}
  else{
   // Lichen rosettes and moss on the moist, upward and sheltered sides; desert varnish where it is dry.
-  let lich=sc_cells(q.xz*3.0+q.y*0.7,seed+16u);let rosette=(1.0-smoothstep(0.18,0.32,lich.x))*step(0.45,lich.z)*smoothstep(0.1,0.6,n_up)*moist;
-  col=mix(col,select(vec3<f32>(0.42,0.44,0.36),vec3<f32>(0.55,0.33,0.08),lich.z>0.85),rosette*0.85*mid);
+  if mid>0.0&&moist>0.0{let lich=sc_cells(q.xz*3.0+q.y*0.7,seed+16u);let rosette=(1.0-smoothstep(0.18,0.32,lich.x))*step(0.45,lich.z)*smoothstep(0.1,0.6,n_up)*moist;
+  col=mix(col,select(vec3<f32>(0.42,0.44,0.36),vec3<f32>(0.55,0.33,0.08),lich.z>0.85),rosette*0.85*mid);}
   let moss=smoothstep(0.35,0.85,n_up+0.4*sc_fbm(q*1.2,seed+17u,2u))*smoothstep(0.45,0.85,moist);col=mix(col,vec3<f32>(0.05,0.09,0.025),moss*0.8);
   let varnish=(1.0-smoothstep(0.1,0.35,moist))*smoothstep(-0.1,0.5,n_up)*0.6;col=mix(col,vec3<f32>(0.10,0.06,0.04),varnish);
   // Wet near water: the lower part darkens.
   col*=mix(1.0,0.55,wet*(1.0-smoothstep(0.1,0.45,low)));
  }
  let rough=select(0.85,0.6,family==2u)*mix(1.0,0.55,wet*(1.0-smoothstep(0.1,0.45,low)));
- let e=0.01;let hb=sc_vnoise(q*25.0,seed+18u);let bump=vec2<f32>(sc_vnoise((q+vec3<f32>(e,0,0))*25.0,seed+18u)-hb,sc_vnoise((q+vec3<f32>(0,0,e))*25.0,seed+18u)-hb)/e*0.004*fine;
- return ScMat(col,rough,bump);
+ return ScRockMaterial(col,rough,grain.xyz*.085*fine);
 }

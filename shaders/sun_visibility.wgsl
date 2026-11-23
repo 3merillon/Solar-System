@@ -425,8 +425,17 @@ fn sun_prop_level(p:vec3<f32>,normal:vec3<f32>,level:u32)->f32{
  // widens with it, so a wall or a low-sun slope does not show the map's texels as steps.
  let grazing=0.45/max(0.3,abs(dot(normal,f.sun.xyz)));
  let separation=max(0.0,(q.z-blocker)*65536.0);let radius=clamp(max(separation*sf.control.z/texel,grazing),0.45,2.0);
+ // Each PCF tap lies at a different light depth on a tilted surface.
+ // Project that plane into the map's axes, including the flipped texture Y.
+ let nl=dot(normal,f.sun.xyz);
+ let slope=clamp(vec2<f32>(dot(normal,sf.right.xyz),-dot(normal,sf.up.xyz))
+     *select(-1.0,1.0,nl>=0.0)/max(.18,abs(nl)),vec2<f32>(-3),vec2<f32>(3));
  var result=0.0;
- for(var y=-1;y<=1;y++){for(var x=-1;x<=1;x++){result+=textureSampleCompareLevel(sun_depth,sun_compare,uv+vec2<f32>(f32(x),f32(y))*radius/map,i32(level),q.z);}}
+ for(var y=-1;y<=1;y++){for(var x=-1;x<=1;x++){
+  let delta=vec2<f32>(f32(x),f32(y))*radius;
+  let depth=q.z+clamp(dot(slope,delta)*texel,-1.5,1.5)/65536.0;
+  result+=textureSampleCompareLevel(sun_depth,sun_compare,uv+delta/map,i32(level),depth);
+ }}
  return result/9.0;
 }
 fn sun_props(p:vec3<f32>,normal:vec3<f32>)->f32{
@@ -464,7 +473,7 @@ fn sunlight_at(p:vec3<f32>,ground:vec3<f32>,normal:vec3<f32>,footprint:f32,start
  // each for cost measurement only; they never ship enabled.
  let experiment=u32(f.cloud_drift.z);
  var terrain=SunTerrain(1,0,0);if (experiment&512u)==0u{terrain=sun_terrain(terrain_receiver,footprint,start,steep);}
- var cloud=SunCloud(1,1);if (experiment&1024u)==0u{cloud=sun_cloud_receiver(receiver,footprint);}
+ var cloud=SunCloud(1,1);if (experiment&1024u)==0u{cloud=sun_cloud_lookup(receiver);}
  var props=1.0;if (experiment&2048u)==0u{props=sun_props(receiver,normal);}
  var cover=1.0;if (experiment&4096u)==0u{cover=sc_sun_cover(receiver,normal,footprint);}
  // Diagnostic 7 shows the march's work instead: iterations / SUN_MARCH_LIMIT (red) and block jumps / 128 (green).

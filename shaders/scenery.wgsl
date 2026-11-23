@@ -4,9 +4,9 @@
 // variant's impostor capture.
 const SC_TREE_CLASSES:u32=3u;
 // Compacted draw lists, one region per class: tree LOD0, LOD1, LOD2, rock LOD0, LOD1, impostor cards.
-fn sc_list_base(k:u32)->u32{switch k{case 0u:{return 0u;}case 1u:{return 1024u;}case 2u:{return 5120u;}case 3u:{return 21504u;}case 4u:{return 25600u;}default:{return 41984u;}}}
+fn sc_list_base(k:u32)->u32{switch k{case 0u:{return 0u;}case 1u:{return 1024u;}case 2u:{return 5120u;}case 3u:{return 21504u;}case 4u:{return 25600u;}case 14u:{return 74752u;}default:{return 41984u;}}}
 fn sc_list_cap(k:u32)->u32{switch k{case 0u:{return 1024u;}case 1u:{return 4096u;}case 2u:{return 16384u;}case 3u:{return 4096u;}case 4u:{return 16384u;}default:{return 32768u;}}}
-const SC_LIST_TOTAL:u32=74752u;
+const SC_LIST_TOTAL:u32=107520u;
 // Indirect draws (8 words each from SC_ARGS): 0-4 mesh classes, 5 cards, 6-7 capture (tree, rock), 8-13 ground cover.
 const SC_ARGS:u32=40u;
 const SC_DRAWS:u32=16u;
@@ -88,12 +88,28 @@ fn sc_vertex(cls:u32,variant:u32,local:u32)->ScV{
 // duplicate vertices form degenerate triangles; the surviving triangles are
 // exactly the coarse mesh. One surface replaces overlapping dithered skins.
 // Shadow casters call this same function, including during the transition.
-fn sc_rock_mesh_vertex(variant:u32,local:u32,lod:f32)->ScV{
- var fine=sc_vertex(3u,variant,local);let face=local/289u;let grid=local%289u;
- let coarse=sc_vertex(4u,variant,face*49u+((grid/17u)*6u/16u)*7u+(grid%17u)*6u/16u);
- let blend=clamp(lod,0.0,1.0);fine.p=mix(fine.p,coarse.p,blend);
- fine.n=normalize(mix(fine.n,coarse.n,blend));fine.t=normalize(mix(fine.t,coarse.t,blend));
- return fine;
+fn sc_far_rock_vertex(variant:u32,face:u32,ij:vec2<u32>)->ScV{
+ return sc_vertex(4u,variant,face*81u+36u*ij.y+4u*ij.x);
+}
+fn sc_rock_vertex(cls:u32,variant:u32,local:u32,lod:f32)->ScV{
+ if cls==11u{return sc_far_rock_vertex(variant,local/9u,vec2<u32>(local%3u,local%9u/3u));}
+ let side=select(9u,17u,cls==3u);let face=local/(side*side);let ij=vec2<u32>(local%side,local/side%side);
+ var vertex=sc_vertex(cls,variant,local);
+ if cls==3u&&lod>0.0{
+  // The fine vertex is a coarse corner, edge midpoint or diagonal midpoint.
+  let base=face*81u+(ij.y/2u)*9u+ij.x/2u;
+  let a=sc_vertex(4u,variant,base);let b=sc_vertex(4u,variant,base+ij.x%2u+9u*(ij.y%2u));
+  let t=min(lod,1.0);vertex.p=mix(vertex.p,(a.p+b.p)*.5,t);vertex.n=mix(vertex.n,(a.n+b.n)*.5,t);
+ }
+ if lod>1.0{
+  let uv=vec2<f32>(ij)*(2.0/f32(side-1u));let cell=min(vec2<u32>(uv),vec2<u32>(1u));let w=uv-vec2<f32>(cell);
+  let a=sc_far_rock_vertex(variant,face,cell);let d=sc_far_rock_vertex(variant,face,cell+1u);
+  let b=sc_far_rock_vertex(variant,face,cell+select(vec2<u32>(0,1),vec2<u32>(1,0),w.x>w.y));
+  let weights=vec3<f32>(1.0-max(w.x,w.y),abs(w.x-w.y),min(w.x,w.y));let t=min(lod-1.0,1.0);
+  vertex.p=mix(vertex.p,a.p*weights.x+b.p*weights.y+d.p*weights.z,t);
+  vertex.n=mix(vertex.n,a.n*weights.x+b.n*weights.y+d.n*weights.z,t);
+ }
+ return vertex;
 }
 // Model centre the culling and capture bounds measure from: a tree's mid-height, a rock's own centre.
 fn sc_center(tree:bool)->vec3<f32>{return select(vec3<f32>(0),vec3<f32>(0,0.5,0),tree);}
@@ -149,10 +165,11 @@ fn scenery_begin(){
  // Mesh classes: indexed draws over each class's template; instance counts filled by culling.
  for(var c=0u;c<5u;c++){sc_set_draw(c,sc_class_quads(c)*6u,0u,sc_class_first(c));}
  let card=5u*8u;atomicStore(&sc_state.args[card],6u);atomicStore(&sc_state.args[card+1u],0u);atomicStore(&sc_state.args[card+2u],0u);atomicStore(&sc_state.args[card+3u],0u);
+ sc_set_draw(14u,sc_class_quads(11u)*6u,0u,sc_class_first(11u));
  // Capture: 64 octahedral views of the variant, from its finest geometry.
  let capture=kind==4u;let tree=index<sc_state.tree_variants;
  sc_set_draw(6u,sc_class_quads(0u)*6u,select(0u,64u,capture&&tree),sc_class_first(0u));
- sc_set_draw(7u,sc_class_quads(3u)*6u,select(0u,64u,capture&&!tree),sc_class_first(3u));
+ sc_set_draw(7u,sc_class_quads(4u)*6u,select(0u,64u,capture&&!tree),sc_class_first(4u));
  // Ground cover: classes 5-9, grass twice (all blades near, five far without flowers).
  sc_set_draw(8u,sc_class_quads(5u)*6u,0u,sc_class_first(5u));sc_set_draw(9u,sc_class_quads(10u)*6u,0u,sc_class_first(10u));
  sc_set_draw(10u,sc_class_quads(6u)*6u,0u,sc_class_first(6u));sc_set_draw(11u,sc_class_quads(7u)*6u,0u,sc_class_first(7u));
@@ -163,7 +180,7 @@ fn scenery_begin(){
 fn scenery_ready(){
  let k=sc_state.job_kind;let i=sc_state.job_index;
  if k==1u{sc_state.templates=1u;}
- if k==2u&&i<72u{sc_state.ready[i]=1u;}
+ if k==2u&&i<72u{sc_state.ready[i]=select(1u,2u,i>=sc_state.tree_variants);}
  if k==3u&&i<16u{sc_state.leaf_ready[i]=1u;}
  if k==4u&&i<72u{sc_state.ready[i]=2u;}
  if k!=0u{sc_state.jobs_done+=1u;}
@@ -258,10 +275,14 @@ fn sc_airless_rock(seed:u32,e:ScEco,slope:f32,cell_area:f32)->ScChoice{
  return ScChoice(2u,tv+fam*4u+hash(seed+3u)%4u,size);
 }
 fn sc_place(slot:u32,priority:u32){
- field_final=true;if slot>=sc_cap()||(f.scenery.x<0.5&&f.scenery.y<0.5){return;}let side=sc_side();let face=slot/sc_face_cap();let cell=slot%sc_face_cap();let eye=f.eye_hi.xyz+f.eye_lo.xyz;let chart=sc_face_project(face,eye);
+ field_final=true;if slot>=sc_cap()||(f.scenery.x<0.5&&f.scenery.y<0.5){return;}
+ let side=sc_side();let bank=slot/sc_face_cap();let cell=slot%sc_face_cap();let eye=f.eye_hi.xyz+f.eye_lo.xyz;
+ let outer=sc_face_project(bank,eye).z<0.0;let face=bank^u32(outer);let chart=sc_face_project(face,eye);
  if chart.z<length(eye)*0.45{return;}let center_raw=vec2<i32>(floor((chart.xy/chart.z*0.5+0.5)*524288.0));
  let velocity=(f.eye_hi.xyz-f.prev_hi.xyz)+(f.eye_lo.xyz-f.prev_lo.xyz);let predicted=sc_face_project(face,eye+clamp(velocity*4.0,vec3<f32>(-120),vec3<f32>(120)));let prediction=clamp(vec2<i32>((predicted.xy/predicted.z-chart.xy/chart.z)*262144.0),vec2<i32>(-8),vec2<i32>(8));let center=(center_raw/16)*16+prediction;
- let residue=vec2<i32>(i32(cell%u32(side)),i32(cell/u32(side)));let low=center-vec2<i32>(side/2);let c=low+((residue-low)%vec2<i32>(side)+vec2<i32>(side))%vec2<i32>(side);
+ let residue=vec2<i32>(i32(cell%u32(side)),i32(cell/u32(side)));let low=select(center,center/2,outer)-vec2<i32>(side/2);
+ var c=low+((residue-low)%vec2<i32>(side)+vec2<i32>(side))%vec2<i32>(side);
+ if outer{c=c*2+sc_outer_offset(face,c);}else if sc_outer_cell(face,c){return;}
  if any(c<vec2<i32>(0))||any(c>=vec2<i32>(524288)){return;}
  let ring=max(abs(c.x-center_raw.x),abs(c.y-center_raw.y));let band_index=select(select(2u,1u,ring<40),0u,ring<16);
  if priority!=band_index{return;}
@@ -282,9 +303,19 @@ fn sc_place(slot:u32,priority:u32){
  if f.cover.w>0.5{let sv=u32(f.cover.w)-1u;let tv=sc_tree_variants();
   if sv<tv&&choice.kind==1u{let sp=sv/sc_tree_ages();let age=sv%sc_tree_ages();choice.variant=sv;choice.size=sc_species_base(sp).height*(0.45+0.55*min(sc_age_value(age),1.0))*(1.0+0.18*max(sc_age_value(age)-1.0,0.0))*(0.9+0.2*sc_random(seed+4u));}
   if sv>=tv&&choice.kind==2u{choice.variant=sv;}}
+ // Height and imagery page revisions can change a probabilistic ecology
+ // choice or temporarily leave it without imagery. A published object owns
+ // its species and dimensions while resident. Still respect mapped water.
+ let resident=field_measured()&&sc_record_current(old.key.w)&&all(old.key.xyz==key.xyz)&&old.identity.w==bitcast<u32>(f.geo.z)&&old.contact.w>0.0005;
+ var retain=resident;
+ if retain&&f.solar.w<.5&&e.water<=0.0{
+  let pos=page_pos(base.hi.xyz,base.lo.xyz);
+  if measured_water_entry(pos,1.0)!=0u&&s.lo.w<measured_water_level(pos,1.0)+1.0{retain=false;choice.kind=0u;}
+ }
+ if retain{choice=ScChoice(u32(old.hi.w),u32(old.shape.z),old.shape.x);}
  if choice.kind==1u&&f.scenery.x<0.5{choice.kind=0u;}if choice.kind==2u&&f.scenery.y<0.5{choice.kind=0u;}
  // A rock on ground too steep for it is decided here, from the field alone, over its whole footprint.
- if field_measured()&&choice.kind==2u{
+ if field_measured()&&choice.kind==2u&&!retain{
   let ch=face_chart(canonical);let step=max(1,i32(choice.size*1.2/f.planet.x*f32(Q)));var spread=0.0;
   for(var j=0u;j<8u;j++){let a=f32(j)*0.785398;let d=vec2<i32>(vec2<f32>(cos(a),sin(a))*f32(step));spread=max(spread,abs(radial_sample(cube_key(u32(ch.x),ch.y+d.x,ch.z+d.y),24u).lo.w-s.lo.w));}
   if spread>choice.size*1.6{choice.kind=0u;}
@@ -422,7 +453,7 @@ fn scenery_classify(@builtin(global_invocation_id) id:vec3<u32>){
  let slot=(id.x+(terrain.frame_count%64u)*SC_REFRESH_CAP)%sc_cap();let c=sc_cull_record(slot);if !c.valid{return;}
  // Retire the contact as well as the draw: shadow casters share this record.
  if urban_blocked(c.s.hi.xyz,c.s.lo.xyz,select(min(12.0,c.s.shape.x*1.5),min(12.0,c.s.shape.x*.15+1.0),c.kind==1u)){sc_instances[slot].contact.w=0.0;return;}
- if c.distance>6500.0{if field_measured()&&c.s.contact.w>0.0{sc_instances[slot].contact.w=0.0;}return;}
+ if sc_prop_pixels(c.s,c.distance)<0.14{if c.s.contact.w>0.0{sc_instances[slot].contact.w=0.0;}return;}
  if sc_state.ready[c.variant]<2u{atomicStore(&sc_state.wanted[c.variant],1u);}
  if sc_state.ready[c.variant]==0u{return;}
  if !sc_reusable(slot,c.s){let i=atomicAdd(&sc_state.refresh_count,1u);if i<SC_REFRESH_CAP{sc_refresh[i]=slot;}else{atomicAdd(&sc_state.deferred,1u);}}
@@ -454,7 +485,7 @@ fn scenery_refresh(@builtin(global_invocation_id) id:vec3<u32>){
 }
 @compute @workgroup_size(64)
 fn scenery_cull(@builtin(global_invocation_id) id:vec3<u32>){
- let slot=id.x;let c=sc_cull_record(slot);if !c.valid||c.distance>6500.0||sc_state.ready[c.variant]==0u||c.s.contact.w<=0.0{return;}
+ let slot=id.x;let c=sc_cull_record(slot);if !c.valid||sc_state.ready[c.variant]==0u||c.s.contact.w<=0.0{return;}
  var s=c.s;let kind=c.kind;let variant=c.variant;let root=c.root;let distance=c.distance;
  if urban_blocked(s.hi.xyz,s.lo.xyz,select(min(12.0,s.shape.x*1.5),min(12.0,s.shape.x*.15+1.0),kind==1u)){return;}
  atomicAdd(&sc_state.resident,1u);if kind==1u{atomicAdd(&sc_state.trees,1u);}else{atomicAdd(&sc_state.rocks,1u);}
@@ -467,15 +498,21 @@ fn scenery_cull(@builtin(global_invocation_id) id:vec3<u32>){
  sc_instances[slot].support=s.support;
  let radius=s.shape.x*(bitcast<f32>(atomicLoad(&sc_state.bounds[variant]))+0.2)*select(1.25,1.12,tree);let center=root+up*(s.contact.y-s.contact.x+select(0.0,0.5*s.shape.x,tree));let z=dot(center,f.forward.xyz);
  let in_view=!(z+radius<0.1||abs(dot(center,f.right.xyz))>max(0.0,z)*f.view.z*f.view.w+radius*2.0||abs(dot(center,f.up.xyz))>max(0.0,z)*f.view.w+radius*2.0);
- // Dither newly published trees/rocks over a visible interval even during fast motion.
- let dt=max(0.0,f.forward.w);
- let duration=mix(.55,1.0,smoothstep(30.0,600.0,distance));
- let appearance=select(min(1.0,s.contact.w+dt/duration),0.001,s.contact.w<=0.0005);
+ let seed=sc_cell_hash(s.key.x,s.key.y,s.key.z);
+ let weight=sc_window_weight(s.key.xyz)*sc_pixel_weight(2.0*sc_prop_pixels(s,distance));
+ let goal=select(0.0005,1.0,sc_admitted(weight+.035*s.contact.w,seed+42839u));
+ let appearance=sc_fade_toward(s.contact.w,goal,0.48);
  sc_instances[slot].contact.w=appearance;
- if !in_view||(!tree&&sc_rock_pixel_weight(s.shape.x,distance)<=0.0){return;}
- let top=select(2.0,3.0,tree);let lod=sc_object_lod(s,distance,sc_variant_captured_rw(variant));
+ if appearance<=0.0005{return;}
+ let top=select(2.0,3.0,tree);let raw=sc_object_lod(s,distance,sc_variant_captured_rw(variant));
+ // Keep a settled representation through a small size deadband. During a
+ // transition both draw lists use the same evolving level and pixel mask.
+ let current=s.support.w;var wanted=round(raw);
+ if abs(current-round(current))<0.0001&&abs(raw-current)<0.58{wanted=current;}
+ let lod=select(sc_fade_toward(current,wanted,0.22),wanted,s.contact.w<=0.0005||f.scenery_limits.z!=0u);
  sc_instances[slot].support.w=lod;
- if !tree&&lod<1.0{sc_append(3u,slot);return;}
+ if !in_view{return;}
+ if !tree{sc_append(select(select(3u,4u,lod>=1.0),14u,lod>=2.0),slot);return;}
  let lo=u32(floor(lod));let hi=u32(ceil(lod));
  for(var k=lo;k<=hi;k++){
   if k>=u32(top){sc_append(5u,slot);}else{sc_append(select(3u+k,k,tree),slot);}
@@ -486,6 +523,7 @@ fn sc_variant_captured_rw(v:u32)->bool{return sc_state.ready[v]>=2u;}
 @compute @workgroup_size(1)
 fn scenery_draws(){
  for(var k=0u;k<5u;k++){atomicStore(&sc_state.args[k*8u+1u],min(atomicLoad(&sc_state.class_count[k]),min(sc_list_cap(k),f.scenery_limits.x)));}
+ atomicStore(&sc_state.args[14u*8u+1u],min(atomicLoad(&sc_state.class_count[14]),min(sc_list_cap(14u),f.scenery_limits.x)));
  atomicStore(&sc_state.args[5u*8u+1u],min(atomicLoad(&sc_state.class_count[5u]),min(sc_list_cap(5u),f.scenery_limits.x)));
 }
 
@@ -518,12 +556,12 @@ fn sc_wind_model(v:ScV,phase:f32,yaw:f32)->vec3<f32>{
  p+=v.n*flutter;
  return p;
 }
-fn sc_project(p:vec3<f32>)->vec4<f32>{return vec4<f32>(dot(p,f.right.xyz)/(f.view.z*f.view.w),dot(p,f.up.xyz)/f.view.w,0.1,dot(p,f.forward.xyz));}
+fn sc_project(p:vec3<f32>)->vec4<f32>{return camera_clip(p);}
 fn sc_species_of(variant:u32)->u32{return select(sc_rock_family(variant-sc_render_state.tree_variants),variant/max(sc_render_state.ages,1u),sc_tree_variant(variant));}
 fn sc_instance_seed(s:ScInstance)->u32{return sc_cell_hash(s.key.x,s.key.y,s.key.z);}
 @vertex fn scenery_mesh(@builtin(vertex_index) vertex:u32,@builtin(instance_index) instance:u32)->ScSurface{
- let cls=vertex>>24u;let local=vertex&0xffffffu;let index=sc_draws[sc_list_base(cls)+instance];let s=sc_objects[index];let variant=u32(s.shape.z);
- var v=sc_vertex(cls,variant,local);if cls==3u{v=sc_rock_mesh_vertex(variant,local,s.support.w);}let m=sc_model(s);let up=normalize(s.hi.xyz+s.lo.xyz);
+ let cls=vertex>>24u;let local=vertex&0xffffffu;let index=sc_draws[sc_list_base(select(cls,14u,cls==11u))+instance];let s=sc_objects[index];let variant=u32(s.shape.z);
+ var v:ScV;if cls>=3u{v=sc_rock_vertex(cls,variant,local,s.support.w);}else{v=sc_vertex(cls,variant,local);}let m=sc_model(s);let up=normalize(s.hi.xyz+s.lo.xyz);
  let wp=sc_wind_model(v,sc_eco_byte(s,0u),s.shape.y);let p=s.support.xyz+m*wp;
  let nm=normalize(m*(v.n/vec3<f32>(dot(m[0],m[0]),dot(m[1],m[1]),dot(m[2],m[2]))));
  let tree=u32(s.hi.w)==1u;let k=select(cls-3u,cls,cls<3u);
@@ -536,7 +574,10 @@ fn sc_instance_seed(s:ScInstance)->u32{return sc_cell_hash(s.key.x,s.key.y,s.key
  return out;
 }
 struct ScGbuffer {@location(0) p:vec4<f32>,@location(1) n:vec4<f32>,@location(2) material:vec4<f32>,@builtin(frag_depth) depth:f32}
-fn sc_dither(pixel:vec2<f32>,index:u32)->f32{let q=vec2<u32>(pixel);return sc_random(q.x^hash(q.y^index));}
+fn sc_dither(pixel:vec2<f32>,index:u32)->f32{
+ let q=vec2<u32>(pixel);
+ return fract(sc_random(q.x^hash(q.y^index))+f32(f.cloud_cache.x%64u)*(39.0/64.0));
+}
 // Whether this class draws this pixel of an object between two levels (complementary dithering).
 fn sc_lod_keep(k:u32,lod:f32,d:f32)->bool{let b=floor(lod);let fr=lod-b;if f32(k)==b{return d>=fr;}if f32(k)==b+1.0{return d<fr;}return false;}
 struct ScShaded {albedo:vec3<f32>,rough:f32,normal:vec3<f32>,tag:f32,alpha:f32}
@@ -551,7 +592,8 @@ fn sc_surface(v:ScSurface,front:bool,facing:vec3<f32>,leaf:array<vec4<f32>,2>)->
  let material=v.info.x&255u;let species=(v.info.x>>8u)&255u;let aux=v.info.x>>16u;let seed=v.info.z;
  var n=normalize(v.n);let t=normalize(v.t-n*dot(v.t,n));let b=cross(n,t);
  var out=ScShaded(vec3<f32>(0.2),0.9,n,-101.0,1.0);
- let footprint=max(length(dpdx(v.p)),length(dpdy(v.p)));
+ let dx=dpdx(v.p);let dy=dpdy(v.p);let footprint=max(length(dx),length(dy));
+ let local_dx=dpdx(v.local)*max(v.misc.z,.05);let local_dy=dpdy(v.local)*max(v.misc.z,.05);
  switch material{
   case 1u,9u:{
    // Bark along the branch: x around (metres), y along (metres).
@@ -574,9 +616,12 @@ fn sc_surface(v:ScSurface,front:bool,facing:vec3<f32>,leaf:array<vec4<f32>,2>)->
   }
   case 3u,6u:{
    let fam=select(species,aux&15u,material==6u);let low=clamp(v.local.y*0.5+0.5,0.0,1.0);
-   let m=sc_rock_material(select(fam,2u,material==6u),v.local*max(v.misc.z,0.05)+select(vec3<f32>(0),vec3<f32>(f32(aux>>4u)*13.1),material==6u),dot(n,sc_surface_up(v)),seed,v.misc.x,v.misc.y,f.solar.w>0.5,footprint,low);
+   let local=v.local*max(v.misc.z,0.05)+select(vec3<f32>(0),vec3<f32>(f32(aux>>4u)*13.1),material==6u);
+   let m=sc_rock_material(select(fam,2u,material==6u),local,dot(n,sc_surface_up(v)),seed,v.misc.x,v.misc.y,f.solar.w>0.5,footprint,low);
    var col=m.albedo;if f.solar.w>2.5{col=mix(col,vec3<f32>(0.62,0.66,0.7),0.75);}
-   out.albedo=col*v.shade.x;out.rough=m.rough;out.normal=normalize(n-t*m.bump.x-b*m.bump.y);out.tag=-103.0;
+   let tx=cross(dy,n);let ty=cross(n,dx);let det=dot(dx,tx);
+   let gradient=(tx*dot(local_dx,m.gradient)+ty*dot(local_dy,m.gradient))*select(-1.0,1.0,det>=0.0)/max(abs(det),1e-10);
+   out.albedo=col*v.shade.x;out.rough=m.rough;out.normal=normalize(n-gradient/max(1.0,length(gradient)*3.0));out.tag=-103.0;
   }
   case 4u,5u:{
    // Grass blades and reeds: base darker, tips lighter and drier.
@@ -601,7 +646,7 @@ fn sc_surface_up(v:ScSurface)->vec3<f32>{return select(sc_up(v.p),v.up,dot(v.tow
 fn sc_leaf_uv(v:ScSurface)->vec2<f32>{let quad=((v.info.x>>16u)>>4u)&3u;return vec2<f32>((f32(quad&1u)+clamp(v.uv.x,0.0,1.0))*0.5,(f32(quad>>1u)+1.0-clamp(v.uv.y,0.0,1.0))*0.5);}
 @fragment fn scenery_mesh_fragment(v:ScSurface,@builtin(front_facing) front:bool)->ScGbuffer{
  if sc_dither(v.clip.xy,v.info.y+42931u)>=v.misc.w{discard;}
- let morph_rock=(v.info.x&255u)==SM_ROCK&&v.shade.w<1.0;
+ let morph_rock=(v.info.x&255u)==SM_ROCK;
  if !morph_rock&&!sc_lod_keep(v.info.w&255u,v.shade.w,sc_dither(v.clip.xy,v.info.y)){discard;}
  let material=v.info.x&255u;let layer=select((v.info.x>>16u)&15u,SC_FERN_LAYER,material==7u);
  let leaf=sc_leaf_sample(layer,sc_leaf_uv(v));
@@ -695,7 +740,7 @@ fn sc_atlas_lod(uv_size:f32)->i32{return i32(clamp(floor(log2(max(1.0,uv_size)))
 fn scenery_audit_contact(@builtin(global_invocation_id) id:vec3<u32>){
  let i=id.x;if i>=64u{return;}let out=i*64u;sc_contact_probe[out+2u]=vec4<f32>(0);
  // The first 64 drawn objects over all classes, finest first.
- var k=0u;var j=i;loop{if k>=6u{return;}let n=min(atomicLoad(&sc_state.class_count[k]),sc_list_cap(k));if j<n{break;}j-=n;k++;}
+ var k=0u;var j=i;loop{if k>=7u{return;}let cls=select(k,14u,k==6u);let n=min(atomicLoad(&sc_state.class_count[cls]),min(sc_list_cap(cls),f.scenery_limits.x));if j<n{k=cls;break;}j-=n;k++;}
  let s=sc_instances[sc_visible[sc_list_base(k)+j]];let key=bitcast<vec3<i32>>(s.identity.xyz);let node=find_leaf(key,2u);var patch_id=NONE;
  for(var q=0u;q<terrain.reserved[1].w;q++){if terrain.published_nodes[q]==node{patch_id=q;break;}}if patch_id==NONE{return;}
  let kk=terrain.nodes[node].key;let uv=on_face_key(key,kk.x);let global=vec2<u32>(uv+vec2<i32>(Q))/2u;let origin=vec2<i32>((global>>vec2<u32>(MAX_LEVEL-kk.y))-kk.zw*16u);var count=0u;

@@ -32,11 +32,15 @@ let fieldPort=null,fieldStats=null;const fieldPages=[],fieldEvents=[];let fieldC
 const SOURCE_BIT={pack:1,terrarium:2,eox:4,swissimage:8,osm:16};
 // The solar system. The body in full detail changes with no reload: the field moves to its pack, and maps and stars stay.
 let fieldWorker=null,earthField=null,mapQueue=[],packBase='pack/';
-const fieldFor=name=>name.startsWith('exo-')||name==='procedural'?null:name==='earth'?earthField:{manifest:{baked:true,body:name},proxy:'',pack:packBase+packFolder(name)};
 // Maps and stars: fetched once, decoded here, entering the engine one per frame. A body without its map stays grey and says so in stats.
 // Bodies with no baked map (docs/SOLAR-SYSTEM.md: the Sun is drawn by the star model; Deimos, Mimas and Uranus's moons have none):
 // not asked for, so a session sends the pack host no request that can only fail. A map baked later must be taken off this list.
 const NO_BAKED_MAP=new Set(['sun','deimos','mimas','ariel','umbriel','titania','oberon','miranda']);
+const fieldFor=name=>{
+ if(name==='earth')return earthField;
+ if(NO_BAKED_MAP.has(name)||name.startsWith('exo-')||name==='procedural')return null;
+ return {manifest:{baked:true,body:name},proxy:'',pack:packBase+packFolder(name)};
+};
 async function loadSpaceAssets(names){
  const {solar:solarPack,base}=await packSite();
  if(solarPack)try{const r=await fetch(`${base}solar/stars.bin`);if(r.ok)spaceStars=new Float32Array(await r.arrayBuffer());}catch{}

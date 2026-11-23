@@ -39,7 +39,14 @@ try{
    maxError=Math.max(maxError,error);samples++;wrongHeight+=error>.15;wrongFacing+=(signed<0)!==(height<402);
   }
   report.cases.push({name,samples,wrongHeight,wrongFacing,maxError});console.log(report.cases.at(-1));
+  // The far coarse lake sits above the eye in the two air views. Its exit
+  // faces must never switch atmospheric perspective off at the horizon.
+  const medium=await capture(b,`${dir}/${name}-water.bin`,W,H,'water');
+  let wrongMedium=0;
+  for(let i=0;i<W*H;i++){if((medium.readUInt16LE(i*8+6)===0)!==(height<402))wrongMedium++;}
+  report.cases.at(-1).wrongMedium=wrongMedium;
   await capture(b,`${dir}/${name}.png`,W,H);
+  assert.equal(wrongMedium,0,`${name} viewed the distant lake from the wrong medium`);
   assert.ok(samples>1000,`${name} must exercise the lake`);assert.equal(wrongHeight,0);assert.equal(wrongFacing,0);
  }
  report.pass=true;

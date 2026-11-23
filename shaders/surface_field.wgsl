@@ -102,6 +102,7 @@ fn field_unresolved(spacing:f32)->vec2<f32>{var unresolved=0.0;var border=0.0;fo
 @group(0) @binding(114) var page_sampler:sampler;
 const PAGE_ORIGIN_ROW:i32=5;
 const PAGE_TEXELS:i32=264;
+const TERRAIN_SOLID_RANGE:f32=256.0;
 fn field_measured()->bool{return f.field.x>0.5;}
 // Chart position of a body point: face, integer position in units of a level-24 cell (2^28
 // per face side) and its fraction. Extends eye_key in the same double-single arithmetic.
@@ -498,7 +499,16 @@ fn page_soft(channel:u32,pos:PagePos,entry:u32)->vec2<f32>{
  // Every arrival moves the table's serial, so after 20 quiet frames nothing is still fading in.
  if !field_final&&f.field_serial.z<20u{
   let slot=page_entry_slot(entry);let arrival=textureLoad(page_meta,vec2<i32>(i32(slot%256u),select(PAGE_HEIGHT_ARRIVAL_ROW,6,channel==1u)+i32(slot/256u)),0).x;
-  let age=(f32(f.cloud_cache.x)-arrival)/20.0;if age<1.0{weight=min(weight,smoothstep(0.0,1.0,max(age,0.0)));toward=min(toward,level-1u);}
+  var age=(f32(f.cloud_cache.x)-arrival)/20.0;
+  if age<1.0&&channel==0u{
+   // Align the height used by relief and shading with nearby published geometry.
+   // Compare at the receiver's terrain height, so this also works in mountains.
+   let radial=normalize(weather_direction(pos.face,pos.uv));
+   let height=page_height_read(entry,pos.g,pos.frac).x;
+   let offset=(radial-normalize(f.eye_hi.xyz+f.eye_lo.xyz))*f.planet.x+radial*(height-f.eye_hi.w);
+   age=max(age,1.0-smoothstep(TERRAIN_SOLID_RANGE,3.0*TERRAIN_SOLID_RANGE,length(offset)));
+  }
+  if age<1.0{weight=min(weight,smoothstep(0.0,1.0,max(age,0.0)));toward=min(toward,level-1u);}
  }
  return vec2<f32>(weight,f32(toward));
 }

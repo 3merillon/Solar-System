@@ -86,17 +86,29 @@ fn building_roof(b:BuildingSource,q:vec2<f32>)->f32{
  return b.north.w*(shape-1.0);
 }
 @compute @workgroup_size(1) fn building_begin(){for(var i=0u;i<8u;i++){atomicStore(&building_state[i],0u);}atomicStore(&building_state[1],1u);}
+// Only on a source publication. Read a snapshot so swaps and compaction
+// cannot overwrite a neighbour's history before it has been read.
+@compute @workgroup_size(64) fn building_remap(@builtin(global_invocation_id) id:vec3<u32>){
+ let i=id.x;if i>=building_control.x{return;}
+ let b=building_sources[i];if b.colour.w<0.0{return;}
+ var prior=vec4<f32>(0);if b.data.w!=0u{prior=building_support[b.data.w-1u];}
+ building_support_write[i]=prior;
+}
 @compute @workgroup_size(64) fn building_generate(@builtin(global_invocation_id) id:vec3<u32>){
  let i=id.x;if i>=building_control.x||f.scenery_work.w<.5{return;}let b=building_sources[i];let origin=building_origin(b);let up=building_up(b);
  if b.colour.w<0.0{return;}
- let away=length(origin-up*dot(origin,up));let extent=length(b.bounds.zw-b.bounds.xy);let weight=1.0-smoothstep(2000.0,3000.0,away);
- if weight<=0.0||f.eye_hi.w>12000.0||!field_measured(){return;}
+ if !field_measured(){return;}
+ let extent=b.bounds.zw-b.bounds.xy;let metres=max(max(extent.x,extent.y),b.hi.w-b.lo.w);
+ let previous=building_support_write[i].z;
+ let ground=surface_height_only(origin,2.0);
+ let pixels=sc_projected_pixels(metres,length(origin+up*(ground+0.5*(b.lo.w+b.hi.w))));
+ let visible=sc_fade_toward(previous,select(0.0,1.0,sc_admitted(sc_pixel_weight(pixels),b.data.z)),0.5);
+ if visible<=0.0{building_support_write[i]=vec4<f32>(0);return;}
  // Eight footprint supports bound the work, not the terrain interval. A common
  // foundation avoids twisted floors; an unseen hill can still intersect a large footprint.
- var low=surface_height_only(origin,2.0);var high=low;
+ var low=ground;var high=low;
  for(var j=0u;j<8u;j++){let k=b.data.x+min(b.data.y-1u,j*b.data.y/8u);let q=building_points[k].p;let h=surface_height_only(origin+b.east.xyz*q.x+b.north.xyz*q.y,2.0);low=min(low,h);high=max(high,h);}
- let pixels=(extent+b.hi.w)*f.view.y/max(1.0,length(origin+up*high));let arrival=smoothstep(0.0,30.0,f32(f.cloud_cache.x-b.data.w));let visible=weight*smoothstep(0.5,2.0,pixels)*arrival;
- if visible<=0.0{return;}building_support_write[i]=vec4<f32>(low-1.5,high,visible,0);
+ building_support_write[i]=vec4<f32>(low-1.5,high,visible,0);
  var count=(b.data.y+1u)*6u;if b.colour.w>1.5{count=(b.data.y*2u+4u)*6u;}
  if b.colour.w<0.0{count=u32(clamp(ceil(distance(building_points[b.data.x].p,building_points[b.data.x+1u].p)/6.0),1.0,32.0))*6u;}
  let offset=atomicAdd(&building_state[0],count);
@@ -118,7 +130,7 @@ fn building_vertex(v:u32)->BuildingVertex {
   else{let roof=edge-b.data.y*2u;c=(vec2<f32>(f32(roof%2u),f32(roof/2u))+c)*.5;edge=b.data.y;}
  }
  var q=mix(b.bounds.xy,b.bounds.zw,c);var h=s.y+b.hi.w;var n=up;var uv=q;var kind=1u;
- if edge<b.data.y{let a=building_points[b.data.x+edge];let z=building_points[a.next];q=mix(a.p,z.p,c.x);h=mix(select(s.x,s.y+b.lo.w,b.lo.w>0.0),s.y+b.hi.w,c.y);let tangent=b.east.xyz*(z.p.x-a.p.x)+b.north.xyz*(z.p.y-a.p.y);n=normalize(cross(tangent,up));uv=vec2<f32>(length(z.p-a.p)*c.x,h-s.y);kind=select(0u,2u,a.boundary!=0u);}
+ if edge<b.data.y{let a=building_points[b.data.x+edge];let z=building_points[a.next];q=mix(a.p,z.p,c.x);h=mix(select(s.x,s.y+b.lo.w,b.lo.w>0.0),s.y+b.hi.w,c.y);let tangent=b.east.xyz*(z.p.x-a.p.x)+b.north.xyz*(z.p.y-a.p.y);n=normalize(cross(tangent,up));uv=vec2<f32>(length(z.p-a.p)*c.x,h-s.y);kind=select(select(0u,4u,(a.boundary&2u)!=0u),2u,(a.boundary&1u)!=0u);}
  h+=building_roof(b,q)*select(1.0,c.y,edge<b.data.y);
  let p=building_origin(b)+b.east.xyz*q.x+b.north.xyz*q.y+up*(h-dot(q,q)/(2.0*f.planet.x));
  var wall_length=0.0;if edge<b.data.y{let a=building_points[b.data.x+edge];wall_length=length(building_points[a.next].p-a.p);}
@@ -147,18 +159,27 @@ fn building_coverage(v:BuildingVertex)->bool{if v.key.y==2u{return false;}if v.k
    let middle=(1.0-smoothstep(.06-footprint,.06+footprint,x))*dash;
    colour=mix(colour,vec3<f32>(.68,.69,.65),max(edge_line,middle));
   }
- }else if v.key.y==0u{
+ }else if v.key.y==0u||v.key.y==4u{
   let cell=fract(grid);let pane=smoothstep(.20-fw.x,.20+fw.x,cell.x)*(1.0-smoothstep(.80-fw.x,.80+fw.x,cell.x))*smoothstep(.26-fw.y,.26+fw.y,cell.y)*(1.0-smoothstep(.75-fw.y,.75+fw.y,cell.y));
-  let window=pane*select(0.0,1.0,grid.y>=0.0&&grid.y<floors&&v.wall_length>1.8&&height>1.8);
-  let frame=smoothstep(.17-fw.x,.17+fw.x,cell.x)*(1.0-smoothstep(.83-fw.x,.83+fw.x,cell.x))*smoothstep(.23-fw.y,.23+fw.y,cell.y)*(1.0-smoothstep(.78-fw.y,.78+fw.y,cell.y))*select(0.0,1.0,grid.y>=0.0&&grid.y<floors&&v.wall_length>1.8&&height>1.8);
+  let entrance=v.key.y==4u&&grid.y>=0.0&&grid.y<1.0&&floor(grid.x)==floor(bays*.5);
+  let glazed=select(0.0,1.0,!entrance&&grid.y>=0.0&&grid.y<floors&&v.wall_length>1.8&&height>1.8);
+  let window=pane*glazed;
+  let frame=smoothstep(.17-fw.x,.17+fw.x,cell.x)*(1.0-smoothstep(.83-fw.x,.83+fw.x,cell.x))*smoothstep(.23-fw.y,.23+fw.y,cell.y)*(1.0-smoothstep(.78-fw.y,.78+fw.y,cell.y))*glazed;
   colour=mix(colour,colour*.65,frame);let tint=.8+.4*sc_random(v.key.z+u32(max(0.0,floor(grid.x)))+31u*u32(max(0.0,floor(grid.y))));colour=mix(colour,vec3<f32>(.035,.065,.085)*tint,window);rough=mix(.85,.32,window);
   let trim=max(1.0-smoothstep(.18,.28,b.hi.w-v.uv.y),1.0-smoothstep(.25,.45,v.uv.y-b.lo.w));colour=mix(colour,b.colour.rgb*.75,trim);
   let storey=1.0-smoothstep(.015,.045,abs(fract(grid.y)-.04));colour=mix(colour,b.colour.rgb*.62,storey*(1.0-window));
   let masonry=vec2<f32>(v.uv.x/.38+floor(v.uv.y/.16)*.5,v.uv.y/.16);let joint=min(fract(masonry.x),fract(masonry.y));
-  if b.east.w==1.0{colour=mix(vec3<f32>(.30,.105,.055)*(0.8+0.2*sin(floor(masonry.x)*12.7)),colour,window);colour=mix(vec3<f32>(.24,.22,.19),colour,smoothstep(.025,.10,joint)+window);}
-  if b.east.w==2.0{let mullion=max(1.0-smoothstep(.025,.055,abs(cell.x-.5)),1.0-smoothstep(.02,.05,cell.y));colour=mix(vec3<f32>(.065,.13,.16)*(0.65+.35*abs(v.n.y)+.2*sin(floor(grid.x)*7.1)),vec3<f32>(.28,.32,.34),mullion);rough=.23;}
+  if b.east.w==1.0{colour=mix(vec3<f32>(.30,.105,.055)*(0.8+0.2*sin(floor(masonry.x)*12.7)),colour,window);colour=mix(vec3<f32>(.24,.22,.19),colour,max(smoothstep(.025,.10,joint),window));}
+  if b.east.w==2.0&&!entrance{let mullion=max(1.0-smoothstep(.025,.055,abs(cell.x-.5)),1.0-smoothstep(.02,.05,cell.y));colour=mix(vec3<f32>(.065,.13,.16)*(0.65+.35*abs(v.n.y)+.2*sin(floor(grid.x)*7.1)),vec3<f32>(.28,.32,.34),mullion);rough=.23;}
   // Recessed glass, sills and cornices retain readable facade depth in light.
-  colour*=1.0-.18*frame*(1.0-pane);let doorway=(1.0-smoothstep(.13-fw.x,.13+fw.x,abs(cell.x-.5)))*(1.0-smoothstep(.65-fw.y,.65+fw.y,grid.y))*select(0.0,1.0,grid.y>=0.0&&floor(grid.x)==floor(bays*.5));colour=mix(colour,vec3<f32>(.045,.065,.07),doorway);
+  colour*=1.0-.18*frame*(1.0-pane);
+  if entrance{
+   let dx=abs(cell.x-.5)*v.wall_length/bays;let dy=v.uv.y-b.lo.w;
+   let aa=max(uv_width,vec2<f32>(.01));let door_h=min(2.12,height/floors*.88);
+   let surround=(1.0-smoothstep(.62-aa.x,.62+aa.x,dx))*(1.0-smoothstep(door_h+.09-aa.y,door_h+.09+aa.y,dy));
+   let door=(1.0-smoothstep(.52-aa.x,.52+aa.x,dx))*(1.0-smoothstep(door_h-aa.y,door_h+aa.y,dy));
+   colour=mix(colour,b.colour.rgb*.60,surround);colour=mix(colour,vec3<f32>(.065,.079,.082),door);rough=mix(rough,.58,door);
+  }
  }else{colour=mix(b.colour.rgb*.58,vec3<f32>(.28,.085,.04),select(0.0,1.0,b.colour.w>1.5));let tile=abs(sin(v.local.x*16.0)*sin(v.local.y*11.0));colour*=.85+.15*tile/(1.0+length(local_width)*12.0);}
  var normal=select(-v.n,v.n,front);if v.key.y==1u&&b.colour.w>1.5{normal=geometric_normal;if dot(normal,building_up(b))<0.0{normal=-normal;}}
  return ScGbuffer(vec4<f32>(v.p,sc_radial_height(v.p)),vec4<f32>(normal,-104),vec4<f32>(colour,rough),.1/max(.1,dot(v.p,f.forward.xyz)));

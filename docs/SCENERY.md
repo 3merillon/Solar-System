@@ -103,10 +103,10 @@ the published terrain triangles and with the rock's own generated mesh.
 
 Draw lists rebuilt each frame from a persistent root/species cache (`scenery_cover.wgsl`): sub-cells of the record lattice
 of about 1.5 m on any body within the reach (220 m high, 260 ultra, 140 medium, 70 low, off minimal), keyed by body, face
-and sub-cell, so the same clump returns at the same place. Grass clumps (20 blades near, 8 beyond 25 m, crossfading over 20-30 m; flowers on half),
+and sub-cell, so the same clump returns at the same place. Grass clumps use near and far meshes with a 23–27 m hysteresis band. Half carry flowers. Other classes include
 reeds with cattails, pebble clusters, ferns from the fern layer of the leaf atlas, and small bushes from the shrub layer.
-Stable per-clump thresholds thin the reach. Full-size geometry fades through pixel coverage at the reach boundary
-and on first arrival; retained plants do not restart their birth fade after a camera turn. Placement reads the displayed surface (`sc_support`) and the water layer: nothing but reeds where
+Stable per-clump thresholds thin the population with distance. Admission and retirement take 0.55 seconds and settle at full or zero coverage.
+Placement reads the displayed surface (`sc_support`) and the water layer: nothing but reeds where
 the water layer says water or the ground lies under the water level; reeds only at still or slow water and under 0.8 m.
 
 ### Placement
@@ -133,20 +133,19 @@ acceptance. Each cell carries at most one rock: the tail of the distribution the
 
 ### Draw path and generation
 
-Template indices carry their class in the top byte, so one indexed indirect draw per class serves every variant: five
-record classes (tree LOD0-2, rock LOD0-1), impostor cards, and six ground-cover draws (grass near and far, reeds,
-pebbles, ferns, bushes). Shadow casters draw the coarsest tree and rock meshes (classes 2 and 4) and the cards, three
-streams per cascade. Levels crossfade by complementary dithering: trees LOD0 above 420 projected pixels (blend to 330),
-LOD1 to 140 (blend to 110), LOD2 to 42, impostor below 24; rocks LOD0 above 160 (blend to 120), LOD1 to 42, impostor
-below 24 (pixels divided by the detail control).
+Template indices carry their class in the top byte, so one indexed indirect draw per class serves every variant: six
+record classes (three tree and three rock meshes), tree impostor cards, and six ground-cover draws (grass near and far, reeds,
+pebbles, ferns, bushes). Each shadow cascade has four streams for tree meshes, rock meshes, tree cards and far rock hulls.
+Each rock shares nested 16-, 8- and 2-cell cube faces. Vertices move onto the parent triangles through a transition, and
+the shadow caster uses the same surface. Far rocks use 48 triangles and keep their individual material and sun depth. Projected size and the detail control select one target representation per object. Each LOD transition advances one level in
+0.22 seconds. Adjacent tree mesh and impostor draws share a rotating complementary mask during the transition. A small hysteresis band keeps a settled level stable.
 
 Generation is one job per frame, chosen on the GPU by `scenery_begin` (first what visible records asked for, then the
 rest in order): templates and ground-cover meshes once; a species' leaf layer; a variant's skeleton and vertices; or a
-variant's 64-view impostor capture into a scratch target, copied and mip-filtered into its layer. Every job pass is
+tree variant's 64-view impostor capture into a scratch target, copied and mip-filtered into its layer. Every job pass is
 gated by indirect arguments (copied out of the state buffer, since a dispatch may not read its arguments from a buffer
 it binds for writing) or an early exit. Records of a variant not yet generated are not drawn; one not yet captured draws
-its coarsest mesh instead of a card. A cold start completes all 69 variants and 14 leaf layers in 153 jobs (about 2.6 s at
-60 fps); trees appear species by species, wanted ones first.
+its coarsest mesh instead of a card. Rock variants are ready when their meshes are generated. Trees appear species by species, wanted ones first.
 
 Culling runs as three passes: classify (which records need their support measured again), refresh (only those, at most
 65,536 a frame, with the heavy support and footprint code), and the light pass that fades, chooses the level and fills
@@ -343,16 +342,12 @@ Full-sphere octahedral capture has 8 × 8 directions, each 64² pixels. Capture 
 runtime share the same upright model frame, linear model normals and signed depth
 toward the capture eye. Four neighboring views use coverage-weighted filtering
 and bounded parallax correction. Cell-local clamping/mips prevent atlas bleed.
-Full-sphere views avoid an invalid hemisphere clamp below the object. Mesh/card
-coverage blends complementarily between 24 and 42 projected height pixels divided
-by the detail control. Terrain TAA is absent; cloud history remains OFF.
+Full-sphere views avoid an invalid hemisphere clamp below the object. The mesh/card switch falls within the 24–42 projected pixel band, scaled by the detail control.
 
-Individual records have a 384-cell face window, with stable coverage handoff
-between 128 and 176 cells from the player. This extends the prior 256-cell window
-by 50%; physical range varies with cube projection, approximately 1.4–4.3 km
-for full handoff. A 6.5 km guard cull is outside the useful window. Records cannot
-be recycled while their visible coverage is nonzero. Newly ready objects acquire
-coverage over 0.65 seconds. Terrain readiness thresholds apply to new admission;
+Individual records occupy a bounded face window of 384 cells per side on the full tier. Its ground footprint varies with body radius and cube projection.
+Within that window the same rule on every body selects rocks by estimated silhouette width and trees by projected height. Support preparation starts at 0.28 pixels.
+The visibility threshold varies by object across the 0.38–1.45 pixel band and the population tapers near the residency edge.
+Newly ready objects acquire full coverage in 0.48 seconds. Terrain readiness thresholds apply to new admission;
 already-admitted props remain present while support refines. Missing support
 retains the last radial support offset until the published surface is available.
 Support and appearance are prepared throughout the entire retained window,

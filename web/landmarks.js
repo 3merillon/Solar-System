@@ -12,7 +12,7 @@ const WEIGHT={MO:1.6,VA:1.2,CM:1.4,PE:1.4,TH:1.3,ME:1.4,OC:1.4,LG:1.4,CR:1.3,ST:
 const extent=f=>f[4]==='ST'?Math.max(f[3],300):f[3];
 const prominence=f=>extent(f)*(WEIGHT[f[4]]??0.9);
 const degrees=(lat,lon)=>`${Math.abs(lat).toFixed(2)}°${lat>=0?'N':'S'} ${Math.abs(lon).toFixed(2)}°${lon>=0?'E':'W'}`;
-export function installLandmarks({canvas,flight,radius,onGo=()=>{},onLand=()=>{},onShow=()=>{}}){
+export function installLandmarks({canvas,flight,radius,onGo=()=>{},onLand=()=>{},onShow=()=>{},onClear=()=>{}}){
  const overlay=document.createElement('canvas');overlay.id='solar-landmarks';document.body.append(overlay);
  const ink=overlay.getContext('2d');
  let index=null,enabled=true,selected=null,hits=[];const bodies=new Map(),loading=new Set();
@@ -28,11 +28,10 @@ export function installLandmarks({canvas,flight,radius,onGo=()=>{},onLand=()=>{}
   }).catch(()=>{}).finally(()=>loading.delete(id));
  }
  // The panel for a chosen feature: what the gazetteer says, and a way there.
- const panel=document.createElement('section');panel.id='solar-landmark';panel.hidden=true;panel.setAttribute('aria-live','polite');
+ const panel=document.createElement('section');panel.id='solar-landmark';panel.hidden=true;
  panel.innerHTML='<div class="solar-row"><strong id="landmark-name"></strong><button id="landmark-close" title="Close">×</button></div><div class="small" id="landmark-kind"></div><p class="small" id="landmark-origin"></p><p class="small" id="landmark-link"></p><div class="solar-controls row"><button id="landmark-go" title="Go there: a short trip, ending high over it (G with it open)">Go there</button><button id="landmark-land" title="Land: a short trip down to just over the ground there (Land with it open)">Land</button></div><p class="small">'+NOTE+'</p>';
  const $=id=>document.getElementById(id);
  function show(body,f){
-  onShow();
   selected={body,name:f[0],lat:f[1],lon:f[2],size:f[3]};
   $('landmark-name').textContent=f[0];
   $('landmark-kind').textContent=`${index?.types?.[f[4]]??f[4]} · ${km(f[3])} · ${degrees(f[1],f[2])}`;
@@ -40,8 +39,10 @@ export function installLandmarks({canvas,flight,radius,onGo=()=>{},onLand=()=>{}
   const url=f[5]&&index?`${index.feature}${f[5]}`:'';
   $('landmark-link').textContent=url?`Gazetteer entry: ${url}`:'';
   panel.hidden=false;
+  onShow(selected,$('landmark-kind').textContent,$('landmark-origin').textContent);
  }
- function attach(hud){hud.append(panel);$('landmark-close').onclick=()=>{panel.hidden=true;selected=null;};$('landmark-go').onclick=()=>{if(selected)onGo(selected);$('landmark-go').blur();};$('landmark-land').onclick=()=>{if(selected)onLand(selected);$('landmark-land').blur();};}
+ function clear(){if(selected){selected=null;panel.hidden=true;onClear();}}
+ function attach(hud){hud.append(panel);$('landmark-close').onclick=clear;$('landmark-go').onclick=()=>{if(selected)onGo(selected);$('landmark-go').blur();};$('landmark-land').onclick=()=>{if(selected)onLand(selected);$('landmark-land').blur();};}
  // body: the nearest body; clear: metres from the eye to its surface; width, height: the render size the projection uses.
  function draw({body,clear,width,height}){
   const rect=canvas.getBoundingClientRect(),dpr=devicePixelRatio||1,W=Math.round(rect.width*dpr),H=Math.round(rect.height*dpr);
@@ -50,11 +51,11 @@ export function installLandmarks({canvas,flight,radius,onGo=()=>{},onLand=()=>{}
   if(!enabled||!body)return;
   const r=radius(body);if(!(clear<r*40))return;
   load(body);const data=bodies.get(body);if(!data)return;
-  const fit=Math.min(W/width,H/height),ox=(W-width*fit)/2,oy=(H-height*fit)/2;
+  const sx=W/width,sy=H/height;
   // Pixels per metre at distance d: the projection's focal length over d. A feature smaller on screen than MIN from the
   // nearest a point of the surface can be is never shown. The list is by prominence, at most extent / 0.4, so once that
   // bound is under MIN the rest are skipped.
-  const focal=height*fit/(2*Math.tan(30*Math.PI/180)),floor=Math.max(clear,1),MIN=22*dpr;
+  const focal=H/(2*Math.tan(30*Math.PI/180)),floor=Math.max(clear,1),MIN=22*dpr;
   let count=0;while(count<data.features.length&&count<4000&&prominence(data.features[count])/0.4*1000*focal/floor>=MIN)count++;
   if(count===0)return;
   const m=flight.surface_markers(body,data.points.subarray(0,count*2),width,height);
@@ -64,7 +65,7 @@ export function installLandmarks({canvas,flight,radius,onGo=()=>{},onLand=()=>{}
   const taken=[];let labels=0;
   for(let i=0;i<count&&labels<budget;i++){
    const flags=m[4*i+3];if((flags&7)!==7)continue;
-   const f=data.features[i],x=ox+m[4*i]*fit,y=oy+m[4*i+1]*fit,d=m[4*i+2];
+   const f=data.features[i],x=m[4*i]*sx,y=m[4*i+1]*sy,d=m[4*i+2];
    const across=extent(f)*1000*focal/d;if(across<MIN)continue;
    const name=f[0],tw=ink.measureText(name).width,box=[x+5*dpr,y-size/2-pad-2*dpr,tw+pad*2+4*dpr,size+pad*2+4*dpr];
    if(box[0]+box[2]>W||taken.some(t=>box[0]<t[0]+t[2]&&t[0]<box[0]+box[2]&&box[1]<t[1]+t[3]&&t[1]<box[1]+box[3]))continue;
@@ -88,5 +89,5 @@ export function installLandmarks({canvas,flight,radius,onGo=()=>{},onLand=()=>{}
   if(hit)show(lastBody,hit.f);
  });
  let lastBody=0;
- return {attach,show,clear(){panel.hidden=true;selected=null;},get selected(){return panel.hidden?null:selected;},draw:o=>{lastBody=o.body;draw(o);},get enabled(){return enabled;},set enabled(v){enabled=!!v;try{localStorage.setItem('solar.landmarks',enabled?'1':'0');}catch{}if(!enabled){ink.clearRect(0,0,overlay.width,overlay.height);hits=[];}}};
+ return {attach,show,clear,get selected(){return panel.hidden?null:selected;},draw:o=>{lastBody=o.body;draw(o);},get enabled(){return enabled;},set enabled(v){enabled=!!v;try{localStorage.setItem('solar.landmarks',enabled?'1':'0');}catch{}if(!enabled){ink.clearRect(0,0,overlay.width,overlay.height);hits=[];}}};
 }

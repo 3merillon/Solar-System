@@ -15,9 +15,8 @@ export function installPlanetIndicators({canvas,id="solar-overlay",onSelect=()=>
   if(overlay.width!==W||overlay.height!==H){overlay.width=W;overlay.height=H;}
   ink.clearRect(0,0,W,H);hits=[];
   if(!enabled)return;
-  // The image fills the window keeping its own shape, with bars at the sides or top: positions are worked out in the image, and placed where it shows.
-  const cw=width,ch=height,fit=Math.min(W/cw,H/ch),ox=(W-cw*fit)/2,oy=(H-ch*fit)/2;
-  const m=markers,rows=[];for(let i=0;i<m.length;i+=6)rows.push({id:m[i],x:(m[i+5]&1)?ox+m[i+1]*fit:m[i+1],y:(m[i+5]&1)?oy+m[i+2]*fit:m[i+2],r:m[i+3]*fit,d:m[i+4],flags:m[i+5]});
+  const sx=W/width,sy=H/height;
+  const m=markers,rows=[];for(let i=0;i<m.length;i+=6)rows.push({id:m[i],x:(m[i+5]&1)?m[i+1]*sx:m[i+1],y:(m[i+5]&1)?m[i+2]*sy:m[i+2],r:m[i+3]*sy,d:m[i+4],flags:m[i+5]});
   // Disks that can hide an indicator, as circles on screen. A body filling most of the view is left to the exact test on its centre.
   const disks=rows.filter(r=>(r.flags&1)&&r.r>1.5&&r.r<Math.max(W,H));
   const byId=Object.fromEntries(rows.map(r=>[r.id,r])),chosen=target;
@@ -33,7 +32,10 @@ export function installPlanetIndicators({canvas,id="solar-overlay",onSelect=()=>
     if(!near||!parent||Math.hypot(b.x-parent.x,b.y-parent.y)<26*dpr)continue;
    }
    // The disk filling the view needs no marker, and neither does the ground under the eye.
-   if(b.r>Math.min(W,H)*0.42&&!isTarget)continue;
+   if(b.r>Math.min(W,H)*0.42&&!isTarget){
+    if((b.flags&3)===3 && !(b.flags&4) && b.r<Math.hypot(W,H))hits.push({id:b.id,x:b.x,y:b.y,r:b.r,d:b.d});
+    continue;
+   }
    const shown=(b.flags&2)!==0,hidden=(b.flags&4)!==0;
    if(!shown&&!isTarget)continue;
    // Behind a body it is not there to be seen, whichever one it is.
@@ -64,19 +66,21 @@ export function installPlanetIndicators({canvas,id="solar-overlay",onSelect=()=>
    const line1=nameOf(b.id).toUpperCase(),line2=metres(b.d),tw=Math.max(ink.measureText(line1).width,ink.measureText(line2).width);
    const ox=b.x+s,oy=b.y-s,left=ox+tw+22*dpr<W;const dir=left?1:-1,ex=ox*(left?1:0)+(left?0:b.x-s)+dir*12*dpr,ey=oy-12*dpr,shelf=ex+dir*(tw+pad*2);
    const boxX=Math.min(ex,shelf),box=[boxX,ey-size-2*dpr,tw+pad*2,size*2+6*dpr];
-   if(!isTarget&&taken.some(t=>box[0]<t[0]+t[2]&&t[0]<box[0]+box[2]&&box[1]<t[1]+t[3]&&t[1]<box[1]+box[3])){hits.push({id:b.id,x:b.x,y:b.y});ink.restore();continue;}
+   const hit={id:b.id,x:b.x,y:b.y,r:b.r,d:b.d};
+   if(!isTarget&&taken.some(t=>box[0]<t[0]+t[2]&&t[0]<box[0]+box[2]&&box[1]<t[1]+t[3]&&t[1]<box[1]+box[3])){hits.push(hit);ink.restore();continue;}
    taken.push(box);
    ink.beginPath();ink.moveTo(left?ox:b.x-s,oy);ink.lineTo(ex,ey);ink.lineTo(shelf,ey);ink.stroke();
    ink.fillText(line1,boxX+pad,ey-3*dpr);
    ink.fillStyle=`rgba(${colour},${alpha*0.72})`;ink.fillText(line2,boxX+pad,ey+size+1*dpr);
    ink.restore();
-   hits.push({id:b.id,x:b.x,y:b.y});
+   hits.push({...hit,box});
   }
  }
  // A click on a marker makes it the target.
  canvas.addEventListener('pointerdown',e=>{
   if(e.button!==0)return;const rect=canvas.getBoundingClientRect(),dpr=devicePixelRatio||1,x=(e.clientX-rect.left)*dpr,y=(e.clientY-rect.top)*dpr;
-  let best=null,reach=22*dpr;for(const h of hits){const d=Math.hypot(h.x-x,h.y-y);if(d<reach){reach=d;best=h;}}
+  let best=hits.find(({box})=>box&&x>=box[0]&&x<=box[0]+box[2]&&y>=box[1]&&y<=box[1]+box[3]);
+  if(!best){let reach=22*dpr,disc;for(const h of hits){const d=Math.hypot(h.x-x,h.y-y);if(d<reach){reach=d;best=h;}if(d<h.r&&(!disc||h.d<disc.d))disc=h;}best??=disc;}
   if(best){onSelect(best.id);}
  });
  return {draw};

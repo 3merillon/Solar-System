@@ -299,7 +299,7 @@ fn water_fresnel(c:f32,eta:f32)->f32{
 // Bounded screen-space secondary visibility, with an explicit environment
 // fallback outside the current view. No primary heightfield or hardware rays.
 fn scene_uv(p:vec3<f32>)->vec2<f32>{let z=dot(p,f.forward.xyz);if z<=0.1{return vec2<f32>(-1);}
- return vec2<f32>(dot(p,f.right.xyz)/(z*f.view.z*f.view.w),-dot(p,f.up.xyz)/(z*f.view.w))*0.5+0.5;}
+ return vec2<f32>(dot(p,f.right.xyz)/(z*f.view.z*f.view.w),-dot(p,f.up.xyz)/(z*f.view.w))*0.5+0.5-f.temporal.xy/f.view.xy;}
 struct WaterRay {color:vec3<f32>,distance:f32,point:vec4<f32>,confidence:f32}
 fn screen_water_ray(origin:vec3<f32>,direction:vec3<f32>,fallback:vec3<f32>)->WaterRay{
  if f.quality.z<0.5{return WaterRay(fallback,0,vec4<f32>(0),0);}
@@ -415,14 +415,17 @@ fn water(@builtin(global_invocation_id) id:vec3<u32>){
  // Classify the ray at the actual near plane. If the first visible interface
  // is a back face the ray exits water; a front face enters it. This also covers
  // a wave crossing the near plane, without a screen-wide underwater switch.
- if abs(f.eye_hi.w-eye_water)<f.water.x*1.1+1.3{
+ let at_waterline=abs(f.eye_hi.w-eye_water)<f.water.x*1.1+1.3;
+ if at_waterline{
   let near=rd*(0.1/max(0.01,dot(rd,f.forward.xyz)));let height=f.eye_hi.w+dot(near,eye_radial);
   let local_surface=sea_wave(f.eye_hi.xyz,f.eye_lo.xyz+near-eye_radial*height,max(0.0625,f.water_motion.z)).w*water_wave_scale(eye_water);
   submerged=height<eye_water+local_surface;
+  // Only a local wave can decide which medium the visible ray starts in.
+  // A far bank or an elevated lake can present a back face to a camera in air.
+  if t<ground&&t<256.0{submerged=textureLoad(ocean_depth,xy,0).r<0.0;}
+  let near_crossing=textureLoad(ocean_cap,xy,0).r;
+  if near_crossing!=0.0{submerged=near_crossing>0.0;}
  }
- if t<ground{submerged=textureLoad(ocean_depth,xy,0).r<0.0;}
- let near_crossing=textureLoad(ocean_cap,xy,0).r;
- if near_crossing!=0.0{submerged=near_crossing>0.0;}
  let land_color=color;var water_coverage=select(0.0,1.0,t<ground);
  // A coarse triangle crosses the level anywhere between its vertices, so the mesh cannot say where water ends, in either direction. It can stand above water that is there, leaving
  // the bed uncovered short of the shore; and it can lie under ground it never sampled, a spit or a hill's foot, with water over them. The shore is where the field crosses the level,
@@ -594,5 +597,5 @@ fn water(@builtin(global_invocation_id) id:vec3<u32>){
   let lw=water_layer_entry(entry,at.face,at.g);if lw!=0u{let w=water_layer_at(lw,at);if w.level>WATER_NONE{field_depth=w.level-page_height_read(lw,at.g,at.frac).x;}}
   textureStore(water_out,xy,vec4<f32>(textureLoad(ocean_depth,xy,0).g/20.0,field_depth/20.0,select(0.0,bottom_depth/20.0,bed_path),1));return;
  }
- textureStore(water_out,xy,vec4<f32>(color,select(1.0,0.0,submerged)));
+ textureStore(water_out,xy,vec4<f32>(color,select(1.0+water_coverage,0.0,submerged)));
 }

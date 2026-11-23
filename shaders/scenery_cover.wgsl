@@ -1,12 +1,12 @@
 // Ground cover: grass clumps, reeds, pebble clusters, ferns and small bushes near the eye (docs/SCENERY.md, "Ground
 // cover"). Rebuilt every frame from persistent keys: sub-cells of the record lattice on each cube face, so the same clump
 // comes back at the same place whatever the path. A fixed toroidal cache retains roots, species and arrival maturity.
-// Full-size clumps use pixel coverage for range, density and publication fades.
+// Distance and habitat select whole clumps. Only a change of state fades pixels.
 struct CoverInstance {p:vec4<f32>,up:u32,yaw_scale:u32,seed:u32,kind:u32}
 @group(0) @binding(149) var<storage,read_write> cover_write:array<CoverInstance>;
 // Persistent root offset and species survive transient terrain lookup misses and view changes.
-// identity x: 23-bit cell + 8-bit habitat alpha + mature flag; y: cell + 5-bit imagery level + valid flag;
-// z: full body seed; w: birth ticks and current-frame emission stamp.
+// identity x: 23-bit cell + 8-bit habitat alpha; y: cell + 5-bit imagery level + valid flag;
+// z: full body seed; w: current-frame emission stamp.
 struct CoverHistory {identity:vec4<u32>,instance:CoverInstance}
 @group(0) @binding(169) var<storage,read_write> cover_history:array<CoverHistory>;
 @group(0) @binding(176) var<storage,read_write> cover_admission:array<atomic<u32>>;
@@ -53,7 +53,7 @@ fn scenery_cover_place(@builtin(global_invocation_id) id:vec3<u32>,@builtin(loca
  let known=(identity.y&0x80000000u)!=0u&&all((identity.xy&vec2<u32>(CV_COORD))==vec2<u32>(c))&&identity.z==bitcast<u32>(f.geo.z);
  let frame=terrain.frame_count&65535u;
  // Invalidate before any cull. A wrapped frame stamp cannot resurrect a rejected cell.
- cover_history[slot].identity.w=(identity.w&65535u)|(((frame-1u)&65535u)<<16u);
+ cover_history[slot].identity.w=(frame-1u)&65535u;
 
  let seed=hash(u32(c.x)^hash(u32(c.y)^hash(face^bitcast<u32>(f.geo.z)^0x47524153u)));
  let unit=1024/sub;let jitter=vec2<i32>(i32(hash(seed)%u32(unit)),i32(hash(seed+1u)%u32(unit)))&vec2<i32>(-2);
@@ -64,7 +64,7 @@ fn scenery_cover_place(@builtin(global_invocation_id) id:vec3<u32>,@builtin(loca
  if along>reach{return;}
  let thin=1.0-0.8*smoothstep(reach*0.45,reach,along);
  let density=smoothstep(sc_random(seed+2u)-.08,sc_random(seed+2u)+.08,thin*f.cover.z);
- if density<=0.{return;}
+ if density<=0.&&!known{return;}
  let s=radial_sample(key,24u);let slope=dot(s.normal.xyz,n);let height=s.lo.w;
  // Cull at the displayed root. A canonical-height cull can discard a visible
  // plant while the terrain is still morphing during travel.
@@ -103,13 +103,9 @@ fn scenery_cover_place(@builtin(global_invocation_id) id:vec3<u32>,@builtin(loca
  if k!=2u&&(e.water<0.3||depth>-0.12){atomicAdd(&sc_state.cover_water_rejected,1u);habitat=0.0;}
  let old_alpha=select(0.0,f32((identity.x>>23u)&255u)/255.0,known);
  let alpha=select(habitat,old_alpha+clamp(habitat-old_alpha,-max(0.,f.forward.w)/.35,max(0.,f.forward.w)/.35),known);
- let now=u32(floor((clock_now()%64.)*1024.))&65535u;
- var born=select(now,identity.w&65535u,known);let age=f32((now-born)&65535u)/1024.;
- let mature=known&&((identity.x&0x80000000u)!=0u||age>=.7);
- let birth=select(smoothstep(0.,.7,age),1.0,mature);
  let up=normalize(base.hi.xyz+base.lo.xyz);
  let ring=f32(max(abs(c.x-center.x),abs(c.y-center.y)))/f32(half);
- var appearance=birth*alpha*density*(1.-smoothstep(reach*.72,reach,along))*(1.-smoothstep(.78,.98,ring));
+ var eligibility=alpha*density*(1.-smoothstep(reach*.80,reach,along))*(1.-smoothstep(.84,.99,ring));
  var size=0.75+0.55*sc_random(seed+4u);
  if k==3u&&airless{size*=1.4;}
  if k==5u{size*=0.8+0.6*sc_random(seed+9u);}
@@ -120,16 +116,21 @@ fn scenery_cover_place(@builtin(global_invocation_id) id:vec3<u32>,@builtin(loca
  // Retire unresolved stones continuously into the filtered ground material.
  if k==3u{
   let pixels=0.2*size/max(0.001,d*2.0*f.view.w/f.view.y);
-  appearance*=smoothstep(0.35,1.25,pixels);
+  eligibility*=smoothstep(0.28,1.05,pixels);
  }
+ let previous=select(0.0,f32(u32(old.instance.p.w)>>12u)/4095.0,known);
+ let appearance=sc_fade_toward(previous,select(0.0,1.0,sc_admitted(eligibility,seed+723u)),0.55);
  let yaw=sc_random(seed+5u)*6.2831853;
  let surface_up=select(up,normalize(s.normal.xyz),k==3u);
  let variant=hash(seed+6u)%select(select(4u,8u,k==0u||k==3u),8u,k==0u);
- let lod=select(0.0,clamp((along-20.0)/10.0,0.0,1.0),k<=1u);
+ let old_lod=f32(u32(old.instance.p.w)&4095u)/4095.0;
+ let coarse=select(27.0,23.0,known&&old_lod>=0.5);
+ let target_lod=select(0.0,1.0,k<=1u&&along>coarse);
+ let lod=select(target_lod,sc_fade_toward(old_lod,target_lod,0.22),known);
  let lists=cv_lists(k,lod);let packed=pack2x16float(vec2<f32>(yaw,size));
  let kind=k|(variant<<8u)|(u32(clamp(e.moist,0.0,1.0)*255.0)<<16u)|(u32(clamp(1.0-e.water/8.0,0.0,1.0)*255.0)<<24u);
  let stamp=select((frame-1u)&65535u,frame,appearance>0.0);
- cover_history[slot]=CoverHistory(vec4<u32>(u32(c.x)|(u32(round(clamp(alpha,0.,1.)*255.0))<<23u)|select(0u,0x80000000u,mature),u32(c.y)|(max(cv_image_level,select(0u,(identity.y>>23u)&31u,known))<<23u)|0x80000000u,bitcast<u32>(f.geo.z),born|(stamp<<16u)),
+ cover_history[slot]=CoverHistory(vec4<u32>(u32(c.x)|(u32(round(clamp(alpha,0.,1.)*255.0))<<23u),u32(c.y)|(max(cv_image_level,select(0u,(identity.y>>23u)&31u,known))<<23u)|0x80000000u,bitcast<u32>(f.geo.z),stamp),
   CoverInstance(vec4<f32>(support.xyz-rel,f32(u32(round(lod*4095.))+4096u*u32(round(appearance*4095.)))),pack2x16unorm(sc_oct_encode(surface_up)),packed,seed,kind));
  if appearance<=0.0{return;}
  for(var t=0u;t<2u;t++){let list=lists[t];if list==99u{continue;}atomicAdd(&cover_admission[list*CV_BUCKETS+(hash(seed+753u)&255u)],1u);}
@@ -152,7 +153,7 @@ fn scenery_cover_place(@builtin(global_invocation_id) id:vec3<u32>,@builtin(loca
 @compute @workgroup_size(64) fn scenery_cover_emit(@builtin(global_invocation_id) id:vec3<u32>){
  let slot=id.x;if slot>=6u*CV_WINDOW*CV_WINDOW||f.cover.x<.5{return;}
  let face=slot/(CV_WINDOW*CV_WINDOW);let eye=f.eye_hi.xyz+f.eye_lo.xyz;let chart=sc_face_project(face,eye);if chart.z<length(eye)*.45{return;}
- let h=cover_history[slot];if (h.identity.y&0x80000000u)==0u||(h.identity.w>>16u)!=(terrain.frame_count&65535u){return;}
+ let h=cover_history[slot];if (h.identity.y&0x80000000u)==0u||h.identity.w!=(terrain.frame_count&65535u){return;}
  let sub=cv_sub();let half=min(i32(ceil(cv_reach()/cv_metres()))+1,i32(CV_WINDOW/2u));let center=vec2<i32>(floor((chart.xy/chart.z*.5+.5)*524288.0*f32(sub)));
  let c=vec2<i32>(h.identity.xy&vec2<u32>(CV_COORD));if any(c<center-vec2<i32>(half))||any(c>=center+vec2<i32>(half))||h.identity.z!=bitcast<u32>(f.geo.z){return;}
  let inst=h.instance;let seed=inst.seed;let unit=1024/sub;let jitter=vec2<i32>(i32(hash(seed)%u32(unit)),i32(hash(seed+1u)%u32(unit)))&vec2<i32>(-2);

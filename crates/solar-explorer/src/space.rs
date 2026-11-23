@@ -1233,6 +1233,7 @@ impl SpacePass {
         width: u32,
         height: u32,
         icrf: [[f32; 3]; 3],
+        jitter: [f32; 2],
         exposure: f32,
     ) {
         let Some(p) = &self.programs else {
@@ -1240,8 +1241,8 @@ impl SpacePass {
         };
         let word = |v: [f32; 3]| [v[0], v[1], v[2], 0.0];
         let view = View {
-            right: word(right),
-            up: word(up),
+            right: [right[0], right[1], right[2], jitter[0]],
+            up: [up[0], up[1], up[2], jitter[1]],
             forward: word(forward),
             screen: [
                 width as f32,

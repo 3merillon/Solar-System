@@ -23,6 +23,9 @@ fn sun_cloud_center(level:u32)->vec3<f32>{let n=normalize(f.eye_hi.xyz+f.eye_lo.
 // fetch is far smaller to compile than four inlined copies of the math.
 fn sun_profile_sample(which:u32,uv:vec2<f32>,layer:u32)->vec4<f32>{if which==0u{return textureSampleLevel(sun_cloud_global,sun_sampler,uv,i32(layer),0);}return textureSampleLevel(sun_cloud_local,sun_wrap_sampler,uv,i32(layer),0);}
 fn sun_cloud_knot(which:u32,uv:vec2<f32>,layer:u32,x:f32,b:f32)->SunCloud{
+ // Below the entire cloud base the requested knot is exact. Two filtered
+ // endpoint reads suffice for most ground, water and vegetation receivers.
+ if x==8.0{return SunCloud(sun_profile_sample(which,uv,layer+1u).w,1.0-sun_profile_sample(which,uv,layer+5u).w);}
  // Adjacent cumulative endpoints plus slope neighbors; most share RGBA texels.
  let i=u32(clamp(floor(x),0.0,15.0));let t=clamp(x-f32(i),0.0,1.0);let row=i/4u;
  let current=-log(max(vec4<f32>(1e-14),sun_profile_sample(which,uv,layer+row)));let opaque=sun_profile_sample(which,uv,layer+row+4u);
@@ -58,7 +61,11 @@ fn sun_cloud_local_address(exit:vec3<f32>,level:u32)->vec3<f32>{
  // back-to-back comparisons of brightness and cost.
  let inner=select(select(104.0,48.0,level<2u),104.0,(u32(f.cloud_drift.z)&8192u)!=0u);
  if (level==0u&&(u32(f.cloud_drift.z)&16384u)!=0u)||(level<2u&&(u32(f.cloud_drift.z)&32768u)!=0u){return vec3<f32>((storage+0.5)/258.0,0.0);}
- return vec3<f32>((storage+0.5)/258.0,1.0-smoothstep(inner,126.0,edge));
+ // Newly arrived columns are published from the centre out. Leave a
+ // bilinear guard and fade into the already available coarser profile.
+ let radius=sf.cloud_centers[level].w;
+ let resident=smoothstep(1.0,12.0,radius-edge);
+ return vec3<f32>((storage+0.5)/258.0,min(resident,1.0-smoothstep(inner,126.0,edge)));
 }
 // Global chart: azimuth about the sun axis, and a radius uniform in the sun's
 // elevation at the ground point a ray reaches (one texel is about 0.35
@@ -128,53 +135,8 @@ fn sun_cloud_lookup(p:vec3<f32>)->SunCloud{
  // either side of a tangent. No per-view-sample procedural shadow march.
  return sun_cloud_maps(exit,point,x);
 }
-// Direct transmittance for a far receiver: its sun ray marched through the
-// knot shells with the receiver's own footprint, the same filtered field the
-// view integrates, so the shadow of a deck resolves exactly where the view
-// resolves the deck. One field evaluation per shell segment while the
-// segment is shorter than the footprint; a grazing ray's segments run to
-// hundreds of km and take up to eight, so that the shadow moves smoothly
-// as the sun moves (a single midpoint jumped by half a step).
-fn sun_cloud_march(p:vec3<f32>,footprint:f32)->f32{
- let world=f.eye_hi.xyz+f.eye_lo.xyz+p;let h=sc_radial_height(p);let b=dot(world,f.sun.xyz);let rh=f.planet.x+h;
- var tau=0.0;var t_prev=0.0;var h_prev=h;
- for(var k=0u;k<9u;k++){
-  let height=SUN_CLOUD_HEIGHTS[8u-k];if height<=h{continue;}
-  // Rising crossing of this shell, in the stable form on the day side.
-  let rk=f.planet.x+height;let delta=(rk-rh)*(rk+rh);let s=sqrt(max(0.0,b*b+delta));
-  let t=select(delta/max(0.001,b+s),-b+s,b<0.0);
-  // Nothing lives below the lowest shell: the march starts there.
-  if k==0u{t_prev=t;h_prev=height;continue;}
-  if t>t_prev{
-   let ds=t-t_prev;let count=clamp(u32(ceil(ds/max(footprint,1000.0))),1u,8u);let spacing=ds/f32(count);let span=(height-h_prev)/f32(count);
-   for(var j=0u;j<count;j++){let q=p+f.sun.xyz*(t_prev+(f32(j)+0.5)*spacing);tau+=cloud_field(q,max(footprint,spacing),span).x*spacing;}
-   if tau>32.0{break;}
-  }
-  t_prev=t;h_prev=height;
- }
- return exp(-tau);
-}
-// Sun transmittance for a terrain or water receiver. Near receivers read the
-// maps; beyond a kilometre of footprint (a thousand kilometres from the
-// camera) the maps' 4 and 40 km texels blur a shadow far more than the view
-// blurs its cloud, which darkened the ground around every resolved deck and
-// let the darkening move with the camera-following windows, so those
-// receivers march their own ray instead (blended in over 1 to 2 km).
-// One call site of sun_cloud_lookup (compilers inline every call; the result is that of the two-site form).
-fn sun_cloud_receiver(p:vec3<f32>,footprint:f32)->SunCloud{
- let direct=smoothstep(1000.0,2000.0,footprint);var marched=1.0;
- if direct>0.0{
-  if f.options.y<0.5||sf.control.x<0.5{return SunCloud(1,1);}
-  if sun_planet(p)==0.0{return SunCloud(1,0);}
-  let h=sc_radial_height(p);let world=f.eye_hi.xyz+f.eye_lo.xyz+p;let receiver=dot(world,f.sun.xyz);
-  if h>=cloud_shell_top()&&(receiver>=0.0||receiver*receiver<=(h-cloud_shell_top())*(2.0*f.planet.x+h+cloud_shell_top())){return SunCloud(1,1);}
-  marched=sun_cloud_march(p,footprint);
-  if direct>=1.0{return SunCloud(marched,1);}
- }
- let cached=sun_cloud_lookup(p);if direct<=0.0{return cached;}
- return SunCloud(mix(cached.transmittance,marched,direct),cached.solid);
-}
-
+// Ground, water and clouds read one sun-ray integral. Its global chart
+// is always resident; local charts refine it as their columns arrive.
 @group(0) @binding(71) var sun_height_out:texture_storage_2d_array<rg32float,write>;
 @group(0) @binding(72) var<storage,read_write> sun_height_keys:array<vec2<u32>>;
 @group(0) @binding(73) var sun_global_out:texture_storage_2d_array<rgba16float,write>;
@@ -184,18 +146,35 @@ fn sun_cloud_receiver(p:vec3<f32>,footprint:f32)->SunCloud{
 // still inside the toroidal window and regenerates only the columns that
 // entered it. Weather animation refreshes an interleaved fraction of columns
 // per frame; parameter, sun or terrain changes rebuild everything at once.
-struct SunCacheState {eye_hi:vec4<f32>,eye_lo:vec4<f32>,eye_tail:vec4<f32>,flags:vec4<u32>,counts:vec4<u32>,centers:array<vec4<f32>,3>,height_frame:atomic<u32>,height_total_lo:atomic<u32>,height_total_hi:atomic<u32>,reserved:u32,height_identity:vec4<u32>,height_reset:vec4<u32>,level_max:array<atomic<u32>,12>,previous_centers:array<vec4<f32>,3>,maxima_dirty:array<atomic<u32>,12>,previous_sun:vec4<f32>,previous_windows:array<vec4<i32>,12>}
+const SUN_MASK_PHASES:u32=8u;
+struct SunCacheState {eye_hi:vec4<f32>,eye_lo:vec4<f32>,eye_tail:vec4<f32>,flags:vec4<u32>,counts:vec4<u32>,centers:array<vec4<f32>,3>,height_frame:atomic<u32>,height_total_lo:atomic<u32>,height_total_hi:atomic<u32>,mask_frames:u32,height_identity:vec4<u32>,height_reset:vec4<u32>,level_max:array<atomic<u32>,12>,previous_centers:array<vec4<f32>,3>,maxima_dirty:array<atomic<u32>,12>,previous_sun:vec4<f32>,previous_windows:array<vec4<i32>,12>}
 @group(0) @binding(81) var<storage,read_write> sun_cache_state:SunCacheState;
 @compute @workgroup_size(1)
 fn sun_cache_begin(){
  atomicStore(&sun_cache_state.height_frame,0u);
  let optical=sf.right.w>0.5;let solid=sf.up.w>0.5;let animated=sf.cache_control.z!=0u;
- sun_cache_state.flags=vec4<u32>(u32(optical),u32(solid),u32(optical),u32(solid));
+ // Newly arrived terrain invalidates only the opaque half of each sunlight
+ // profile. Retain its optical depth and refresh the resident masks in
+ // bounded stripes, including in frozen weather. New columns fill both halves.
+ if solid{sun_cache_state.mask_frames=select(SUN_MASK_PHASES,0u,optical);}
+ let refresh_mask=sun_cache_state.mask_frames>0u;
+ if refresh_mask{sun_cache_state.mask_frames-=1u;}
+ sun_cache_state.flags=vec4<u32>(u32(optical),u32(solid),u32(optical),u32(solid||refresh_mask));
  // Rebuild counters count frames with optical work (parameter changes or an
  // interleaved animation refresh) and frames with solid work.
- sun_cache_state.counts+=vec4<u32>(u32(optical||animated),u32(solid),u32(optical||animated),u32(solid));
+ sun_cache_state.counts+=vec4<u32>(u32(optical||animated),u32(solid),u32(optical||animated),u32(solid||refresh_mask));
  sun_cache_state.eye_hi=f.eye_hi;sun_cache_state.eye_lo=f.eye_lo;sun_cache_state.eye_tail=f.eye_tail;
- for(var level=0u;level<3u;level++){sun_cache_state.previous_centers[level]=sun_cache_state.centers[level];sun_cache_state.centers[level]=vec4<f32>(sun_cloud_center(level),0);}
+ for(var level=0u;level<3u;level++){
+  let old=sun_cache_state.centers[level];let centre=sun_cloud_center(level);
+  let step=256.0*exp2(f32(level)*2.0);
+  let shift=abs(centre.xy-old.xy)/step;
+  var retained=max(0.0,old.w-max(shift.x,shift.y));
+  if old.z!=centre.z||optical{retained=0.0;}
+  var radius=min(129.0,retained+12.0);
+  if f.options.y<0.5||sf.control.x<0.5{radius=0.0;}
+  sun_cache_state.previous_centers[level]=old;
+  sun_cache_state.centers[level]=vec4<f32>(centre,radius);
+ }
  // One world revision and chart face identify every height texel; a change
  // invalidates all levels at once instead of keying each texel by token.
  let identity=vec2<u32>(f.numeric.w,sun_face(f.eye_hi.xyz+f.eye_lo.xyz)+1u);
@@ -324,14 +303,17 @@ fn sun_height_maxima(@builtin(workgroup_id) wg:vec3<u32>,@builtin(local_invocati
  }
 }
 fn sun_down_distance(b:f32,height:f32)->f32{let c=(cloud_shell_top()-height)*(2.0*f.planet.x+cloud_shell_top()+height);let d=b*b-c;if d<=0.0{return max(0.0,b);}return c/max(0.001,b+sqrt(d));}
-// Row-interleaved refresh, uniform across a 64-wide workgroup row.
+// Give a whole 8 x 8 workgroup one refresh phase.
 fn sun_profile_refresh(coord:vec2<i32>)->bool{
  if sf.cache_control.z==0u{return false;}
  let divisor=max(1u,sf.cache_control.y);
- return ((u32(coord.y)+sf.cache_control.x)%divisor)==0u;
+ let tile=vec2<u32>(coord)/8u;
+ let phase=hash(tile.x+4099u*tile.y);
+ return (phase%divisor+sf.cache_control.x%divisor)%divisor==0u;
 }
 fn sun_bake_cloud(point:vec3<f32>,footprint:f32,coord:vec2<i32>,layer:u32,local:bool,fresh:bool){
  let flags=sun_cache_state.flags;var optical_dirty=select(flags.x,flags.z,local)!=0u;var solid_dirty=select(flags.y,flags.w,local)!=0u;
+ if local&&solid_dirty&&!optical_dirty{solid_dirty=(u32(coord.y)/8u)%SUN_MASK_PHASES==sf.cache_control.x%SUN_MASK_PHASES;}
  // cache_control.w: the sun drifted below the rebake angle, so its interleaved rows refresh the terrain mask too.
  if fresh{optical_dirty=true;solid_dirty=true;}else if sun_profile_refresh(coord){optical_dirty=true;solid_dirty=solid_dirty||sf.cache_control.w!=0u;}
  if !optical_dirty&&!solid_dirty{return;}
@@ -354,16 +336,16 @@ fn sun_bake_cloud(point:vec3<f32>,footprint:f32,coord:vec2<i32>,layer:u32,local:
     // Integrate the thin vertical envelope over this sun segment. Midpoint
     // tests alone flickered when a low sun swept samples across cloud bases.
     let span=abs(dot(normalize(world),f.sun.xyz))*ds+ds*ds/(4.0*f.planet.x);
-    // cloud_medium's profile is exactly zero when the whole span [h-span/2,
+    // The cloud profile is exactly zero when the whole span [h-span/2,
     // h+span/2] lies outside [base, base+thickness]: both clamped integrals
     // (or the midpoint profile) are then equal or zero. Skip the noise there;
     // most sun-ray samples of a thin deck lie above or below it.
     if h+span*0.5>w.base&&h-span*0.5<w.base+max(100.0,w.top-w.base){
      let shape=cloud_body(world,h,max(footprint,ds),w);
-     tau+=cloud_medium(relative,h,span,vec4<f32>(shape.x,w.kind,w.base,w.top),shape.y).x*ds;
+     tau+=cloud_extinction(shape.x,w.kind,shape.y,cloud_profile(h,span,shape.zw).x)*ds;
     }
     }
-    if solid_dirty&&blocked<1.0{var terrain=0.0;if local{terrain=sun_terrain_height(relative,max(footprint,32.0)).x;}else{terrain=surface_detail_sample(relative,footprint).height;}blocked=max(blocked,smoothstep(0.0,max(1.0,footprint*0.1),terrain-h));}
+    if solid_dirty&&blocked<1.0&&h<=sf.metrics.x{var terrain=0.0;if local{terrain=sun_terrain_height(relative,max(footprint,32.0)).x;}else{terrain=surface_detail_sample(relative,footprint).height;}blocked=max(blocked,smoothstep(0.0,max(1.0,footprint*0.1),terrain-h));}
    }}
    optical[k/4u][k%4u]=min(32.0,tau);opaque[k/4u][k%4u]=blocked;
   }
@@ -382,18 +364,21 @@ fn sun_cloud_generate_ray(id:vec3<u32>){
   // footprint, the tangential span being smaller everywhere.
   sun_bake_cloud(point,1.5707964*f.planet.x/((1.0-SUN_GLOBAL_RING)*0.5*f32(global)),vec2<i32>(id.xy),0u,false,false);
  }
- else{if any(id.xy>=vec2<u32>(258)){return;}let level=id.z-1u;let c=sf.cloud_centers[level].xyz;let step=256.0*exp2(f32(level)*2.0);
+ else{if any(id.xy>=vec2<u32>(258)){return;}let level=id.z-1u;let c=sf.cloud_centers[level];let step=256.0*exp2(f32(level)*2.0);
   // Toroidal window: storage texel -> absolute column index; columns that were
   // outside the previous window (or on another face) are fresh.
   let origin=vec2<i32>(round(c.xy/step))-129;let storage=vec2<i32>(id.xy);
   let absolute=origin+((storage-origin)%258+258)%258;
-  let previous=sun_cache_state.previous_centers[level];let previous_origin=vec2<i32>(round(previous.xy/step))-129;
-  let fresh=any(absolute<previous_origin)||any(absolute>=previous_origin+258)||previous.z!=c.z;
+  let offset=abs(vec2<f32>(absolute)+0.5-c.xy/step);
+  if max(offset.x,offset.y)>=c.w{return;}
+  let previous=sun_cache_state.previous_centers[level];
+  let old_offset=abs(vec2<f32>(absolute)+0.5-previous.xy/step);
+  let fresh=max(old_offset.x,old_offset.y)>=previous.w||previous.z!=c.z;
   let uv=(vec2<f32>(absolute)+0.5)*step/f.planet.x;let point=normalize(weather_direction(u32(c.z),uv))*(f.planet.x+cloud_shell_top());sun_bake_cloud(point,max(128.0,step*0.5),storage,level*8u,true,fresh);}
 }
-@compute @workgroup_size(64,1)
+@compute @workgroup_size(8,8)
 fn sun_cloud_global_generate(@builtin(global_invocation_id) id:vec3<u32>){sun_cloud_generate_ray(vec3<u32>(id.xy,0u));}
-@compute @workgroup_size(64,1)
+@compute @workgroup_size(8,8)
 fn sun_cloud_local_generate(@builtin(global_invocation_id) id:vec3<u32>){sun_cloud_generate_ray(vec3<u32>(id.xy,id.z+1u));}
 
 // Explicit qualification only: independent high-sample ray quadrature, without
@@ -406,7 +391,10 @@ fn sun_reference_cloud(p:vec3<f32>)->f32{
  if di>0.0&&height<1300.0{start=max(a,-b+sqrt(di));}
  let ds=(end-start)/256.0;var tau=0.0;
  for(var i=0u;i<256u;i++){let q=p+f.sun.xyz*(start+(f32(i)+0.5)*ds);let point=f.eye_hi.xyz+f.eye_lo.xyz+q;let h=sc_radial_height(q);let w=cached_weather(point);let z=(h-w.base)/max(100.0,w.top-w.base);
-  if z>0.0&&z<1.0{tau+=cloud_body(point,h,128.0,w).x*smoothstep(0.0,0.08,z)*(1.0-smoothstep(0.9,1.0,z))*mix(0.00065,0.0011,w.kind)*ds;}
+  if z>0.0&&z<1.0{
+   let body=cloud_body(point,h,128.0,w);let local_h=(h-body.z)/max(1.0,body.w-body.z);
+   tau+=body.x*mix(0.00125,0.0011,w.kind)*smoothstep(0.0,0.08,local_h)*(1.0-smoothstep(0.9,1.0,local_h))*ds;
+  }
  }
  return exp(-tau);
 }
@@ -416,7 +404,7 @@ fn sun_audit(@builtin(global_invocation_id) id:vec3<u32>){
  if id.x>=3072u{return;}let xy=vec2<i32>((vec2<f32>(f32(id.x%64u),f32(id.x/64u))+0.5)/vec2<f32>(64,32)*f.view.xy);var p=textureLoad(positions,clamp(xy,vec2<i32>(0),vec2<i32>(f.view.xy)-1),0);var normal=textureLoad(normals,clamp(xy,vec2<i32>(0),vec2<i32>(f.view.xy)-1),0);var fp=surface_detail_footprint(p.xyz);let base=id.x*5u;
  if id.x>=2048u{let i=id.x-2048u;let n=normalize(f.eye_hi.xyz+f.eye_lo.xyz);let basis=sc_basis(n,0);let offset=(vec2<f32>(f32(i%32u),f32(i/32u))-15.5)*8.0;let point=-n*f.eye_hi.w+basis[0]*offset.x+basis[2]*offset.y;let detail=surface_detail_sample(point,0.25);p=vec4<f32>(point+n*(detail.height-sc_radial_height(point)),detail.height);normal=vec4<f32>(detail.normal,0);fp=0.25;}
  sun_audit_out[base]=vec4<f32>(vec2<f32>(xy),fp,normal.w);sun_audit_out[base+1u]=p;
- if length(p.xyz)<0.1{return;}var terrain_receiver=p.xyz;if normal.w>= -100.0{let h=surface_detail_sample(p.xyz,fp).height;terrain_receiver+=normalize(f.eye_hi.xyz+f.eye_lo.xyz+p.xyz)*(h-sc_radial_height(p.xyz));}let terrain=sun_terrain(terrain_receiver,fp,-1e30,0.0);let light=sunlight_at(p.xyz,terrain_receiver,normalize(normal.xyz),fp,-1e30,0.0);let height=sun_terrain_height(p.xyz,fp);let cloud=sun_cloud_receiver(p.xyz,fp);
+ if length(p.xyz)<0.1{return;}var terrain_receiver=p.xyz;if normal.w>= -100.0{let h=surface_detail_sample(p.xyz,fp).height;terrain_receiver+=normalize(f.eye_hi.xyz+f.eye_lo.xyz+p.xyz)*(h-sc_radial_height(p.xyz));}let terrain=sun_terrain(terrain_receiver,fp,-1e30,0.0);let light=sunlight_at(p.xyz,terrain_receiver,normalize(normal.xyz),fp,-1e30,0.0);let height=sun_terrain_height(p.xyz,fp);let cloud=sun_cloud_lookup(p.xyz);
  sun_audit_out[base+2u]=vec4<f32>(terrain.visibility,terrain.unresolved,sun_props(p.xyz,normalize(normal.xyz)),sc_sun_cover(p.xyz,normalize(normal.xyz),fp));
  sun_audit_out[base+3u]=vec4<f32>(cloud.transmittance,sun_reference_cloud(p.xyz),cloud.solid,sun_direct(light));
  sun_audit_out[base+4u]=vec4<f32>(height.x,height.z,sc_radial_height(p.xyz),terrain.work);
@@ -433,7 +421,7 @@ fn sun_world_audit(@builtin(global_invocation_id) id:vec3<u32>){
  if id.x>=arrayLength(&sun_world_probes){return;}
  let input=sun_world_probes[id.x];let up=normalize(f.eye_hi.xyz+f.eye_lo.xyz);var p=input.xyz-up*(f.eye_hi.w-sf.metrics.y);let hinted=input.w<0.0;let fp=abs(input.w);let normal=normalize(f.eye_hi.xyz+f.eye_lo.xyz+p);let i=id.x*14u;
  var hint=-1e30;if hinted{hint=surface_detail_sample(p,fp).height;p+=normal*(hint-sc_radial_height(p));}
- let terrain=sun_terrain(p,fp,hint,0.0);let cloud=sun_cloud_receiver(p,fp);let height=sun_terrain_height(p,fp);
+ let terrain=sun_terrain(p,fp,hint,0.0);let cloud=sun_cloud_lookup(p);let height=sun_terrain_height(p,fp);
  sun_audit_out[i]=vec4<f32>(p,fp);
  sun_audit_out[i+1u]=vec4<f32>(terrain.visibility,terrain.unresolved,sun_props(p,normal),cloud.transmittance);
  sun_audit_out[i+2u]=vec4<f32>(sun_prop_level(p,normal,0u),sun_prop_level(p,normal,1u),sun_prop_level(p,normal,2u),sun_prop_level(p,normal,3u));

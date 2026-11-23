@@ -17,6 +17,12 @@ try{
  await b.evaluate('solarExplorer.resize(960,540);solarExplorer.engine.profiling(true);solarExplorer.configure({scenery_wind:0,clouds:false,atmosphere:false,water:false});solarExplorer.time=0;');
  await frames(380,.1); // Include the coarse half-float timestamp range, above 32 seconds.
  const initial=await sample('settled');assert.ok(initial.count>100);
+ assert.equal(initial.fading,0,'stationary ground cover must reach full visibility throughout its admitted range');
+ if(!earth){
+  const props=JSON.parse(await b.evaluate('solarExplorer.engine.audit_scenery()')).objects.filter(o=>o.drawn);
+  assert.ok(props.some(o=>o.kind===1),'expected trees in the forest view');
+  assert.ok(props.every(o=>o.contact[3]===1&&Number.isInteger(o.support[3])),'stationary props must finish arrival and LOD fades');
+ }
  assert.ok(report.samples[0].cover.draws.reduce((n,v,i)=>n+(i===3?0:v),0)>100,'vegetation must remain present, not only pebbles');
  await capture(b,dir+'/before.png',960,540);
  for(const dt of [1/60,1/120,1/240,0,1/30,.25]){

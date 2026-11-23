@@ -36,6 +36,43 @@ pub const RING_WORDS: usize = 17;
 const RING_NEAR: f64 = 800e3;
 const RING_RADII: [f64; 2] = [70e6, 140e6];
 
+/// Project the two tangent lines of a bounding sphere on each view axis.
+/// A sphere off axis projects to an offset ellipse, even with a circular orbit-facing disk.
+fn body_rect(view: V3, radius: f64, aspect: f64, tan: f64) -> Option<[f64; 4]> {
+    let [x, y, z] = view;
+    if z + radius <= 0.0 {
+        return None;
+    }
+    if z <= radius {
+        // When the sphere crosses the eye plane the tangent interval is unbounded.
+        // Reject it against the side planes before falling back to the full screen.
+        let sx = tan * aspect;
+        if x.abs() - z * sx > radius * sx.hypot(1.0) || y.abs() - z * tan > radius * tan.hypot(1.0)
+        {
+            return None;
+        }
+        return Some([4.0; 4]);
+    }
+    let denom = (z - radius) * (z + radius);
+    let interval = |axis: f64, scale: f64| {
+        let centre = axis * z;
+        let span = radius * (axis * axis + denom).sqrt();
+        let divisor = denom * scale;
+        (
+            ((centre - span) / divisor).max(-1.0),
+            ((centre + span) / divisor).min(1.0),
+        )
+    };
+    let (left, right) = interval(x, tan * aspect);
+    let (bottom, top) = interval(y, tan);
+    (left < right && bottom < top).then_some([
+        (left + right) * 0.5,
+        (bottom + top) * 0.5,
+        (right - left) * 0.5,
+        (top - bottom) * 0.5,
+    ])
+}
+
 // Visible solar disk against one spherical body's angular disk. The partial
 // phase uses planar circle overlap; full light/umbra are exact for these spheres.
 use solar_core::stars::Photosphere;
@@ -742,13 +779,7 @@ impl SolarWorld {
             } else {
                 (figure + shell).max(ring[1])
             };
-            // Cull behind the camera, unless the bound holds the eye.
             let along = dot(offset, forward);
-            let near = distance < bound * 1.01;
-            let sin_bound = (bound / distance.max(bound)).min(1.0);
-            if !near && along < 0.0 && (-along / distance) > sin_bound {
-                continue;
-            }
             let mut body_sun = [0.0; 3];
             let m = orientation(&b.rotation, self.time);
             let (sun_pos, _) = e.relative_state(sun_id, b.id, self.time);
@@ -787,25 +818,16 @@ impl SolarWorld {
                 BodyKind::Giant => 4.0,
                 BodyKind::Solid => 0.0,
             };
-            let mut angular = (bound / distance.max(bound)).asin();
-            if is_star {
-                // The corona and the glare, to STAR_REACH radii, and never under 64 pixels for the glare of a far star.
-                angular = angular.max(64.0 * pixel).min(1.2);
-            }
-            let angular_min = angular.max(3.0 * pixel);
-            let mut rect = [4.0, 4.0, 4.0, 4.0];
-            if !near && along > 0.0 && angular_min < 1.0 {
-                let c = [
-                    dot(offset, right) / along / (aspect * tan),
-                    dot(offset, up_true) / along / tan,
-                ];
-                let half = angular_min.tan() / tan * 1.2;
-                let (hx, hy) = (half / aspect, half);
-                if c[0].abs() - hx > 1.0 || c[1].abs() - hy > 1.0 {
-                    continue;
-                }
-                rect = [c[0], c[1], hx, hy];
-            }
+            let pixel_floor = if is_star { 64.0 } else { 3.0 };
+            let radius = bound.max(distance * (pixel_floor * pixel).min(1.57).sin());
+            let Some(rect) = body_rect(
+                [dot(offset, right), dot(offset, up_true), along],
+                radius,
+                aspect,
+                tan,
+            ) else {
+                continue;
+            };
             let mut row = Vec::with_capacity(PER_BODY);
             row.extend_from_slice(&rect);
             row.extend_from_slice(&offset);
@@ -887,22 +909,15 @@ impl SolarWorld {
             let distance = length(offset);
             let radius = f64::from(self.asteroids[i * 12 + 11].abs()) * 1000.0;
             let along = dot(offset, forward);
-            let sin_bound = (radius / distance.max(radius)).min(1.0);
-            let near = distance < radius * 1.5;
-            if !near && along < 0.0 && (-along / distance) > sin_bound {
-                continue;
-            }
             let angular = (radius / distance.max(radius)).asin();
-            let mut rect = [4.0, 4.0, 4.0, 4.0];
-            let wide = angular.max(3.0 * pixel) * 1.3;
-            if !near && along > 0.0 && wide < 1.0 {
-                let c = [
-                    dot(offset, right) / along / (aspect * tan),
-                    dot(offset, up_true) / along / tan,
-                ];
-                let half = wide.tan() / tan;
-                rect = [c[0], c[1], half / aspect, half];
-            }
+            let Some(rect) = body_rect(
+                [dot(offset, right), dot(offset, up_true), along],
+                radius.max(distance * (3.0 * pixel).min(1.57).sin()),
+                aspect,
+                tan,
+            ) else {
+                continue;
+            };
             let mut row = Vec::with_capacity(PER_BODY);
             row.extend_from_slice(&rect);
             row.extend_from_slice(&offset);
@@ -1311,6 +1326,32 @@ pub fn layer_of(id: i32) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn projected_body_bounds_contain_every_visible_ray_hit() {
+        let tan = 30_f64.to_radians().tan();
+        for aspect in [0.54, 1.0, 1.89, 4.5] {
+            for (centre, radius) in [
+                ([0.95, -0.85, 1.0], 0.64), // Mars partly below the viewport
+                ([1.5, 0.2, 1.0], 0.85),    // ring extends past the right edge
+                ([-0.65, 0.5, 0.2], 0.72),  // crosses the eye plane
+                ([0.1, 0.4, -2.0], 0.5),
+            ] {
+                let rect = body_rect(centre, radius, aspect, tan);
+                for row in 0..80 {
+                    for col in 0..120 {
+                        let x = (col as f64 + 0.5) / 60.0 - 1.0;
+                        let y = (row as f64 + 0.5) / 40.0 - 1.0;
+                        let ray = normalized([x * aspect * tan, y * tan, 1.0]);
+                        let t = dot(centre, ray).max(0.0);
+                        if length(sub(centre, mul(ray, t))) <= radius {
+                            let [cx, cy, hx, hy] = rect.expect("visible body was culled");
+                            assert!(hx >= 4.0 || ((x - cx).abs() <= hx && (y - cy).abs() <= hy));
+                        }
+                    }
+                }
+            }
+        }
+    }
     #[test]
     fn eye_sunlight_covers_lit_umbra_and_penumbra() {
         assert_eq!(sun_disk_visibility(0., 0.1, 0.00465), 0.);

@@ -18,6 +18,17 @@ const mean=bytes=>{let sum=0;for(let i=0;i<bytes.length;i+=4)sum+=bytes[i]+bytes
 try{
  await b.send('Page.navigate',{url:'http://127.0.0.1:5198/?test=1&quality=high&at=301&height=8000'});await ready(b);
  await b.evaluate('solarExplorer.resize(960,540);solarExplorer.configure({scenery_density:1,scenery_budget:8192,scenery_wind:0,clouds:false,atmosphere:false});solarExplorer.time=0;solarExplorer.engine.profiling(true)');
+ // Freeze a reproducible daylight epoch. Local calendar time can put this
+ // landing site on the night side, where a cloudless ground-shadow test is empty.
+ await b.evaluate('solarFlight.flight.set_rate(0)');
+ for(let day=0;day<30;day++){
+  const epoch=852076800+day*86400;
+  await b.evaluate('solarFlight.flight.set_seconds('+epoch+')');await camera(1200);await frames(3);
+  const sun=await b.evaluate('Array.from(solarFlight.flight.packet(960,540).slice(11,14))');
+  const elevation=up.reduce((v,x,i)=>v+x*sun[i],0);
+  if(elevation>.24&&elevation<.65){report.epoch=epoch;break;}
+ }
+ assert.ok(report.epoch,'expected a sunlit lunar test site');
  for(const height of [1200,600,200,80,35]){
   await camera(height);await frames(180);
   const on=await capture(b,`${dir}/height-${height}.png`,960,540);
@@ -43,6 +54,9 @@ try{
  }
  await camera(35);await frames(180);await capture(b,dir+'/motion-return.png',960,540);
  report.audit=JSON.parse(await b.evaluate('solarExplorer.engine.audit_scenery()'));
+ const visible=report.audit.objects.filter(o=>o.drawn);
+ assert.ok(visible.length>0,'expected visible lunar rocks');
+ assert.ok(visible.every(o=>o.contact[3]===1&&Number.isInteger(o.support[3])),'stationary rocks must finish both arrival and LOD fades');
  assert.equal(await b.evaluate('window.explorerFailure'),null);report.pass=true;
 }catch(e){report.error=String(e.stack||e);process.exitCode=1;}finally{
  await writeFile(dir+'/report.json',JSON.stringify(report,null,2));

@@ -21,12 +21,14 @@ const SURFACE_RATE: f32 = 1.0 / 30.0;
 /// Earth's clouds for the far planet: see `update_far_clouds`.
 struct FarClouds {
     uniform: wgpu::Buffer,
-    weather: wgpu::BindGroup,
     pipeline: wgpu::ComputePipeline,
     map: wgpu::BindGroup,
     width: u32,
     first_row: u32,
     cold: bool,
+    last_weather: Option<[f64; 3]>,
+    last_clock: crate::animation::CloudClock,
+    pending_frames: u32,
     seed: u32,
 }
 #[derive(Clone, Copy)]
@@ -100,6 +102,7 @@ pub struct Settings {
     pub clouds: bool,
     pub water: bool,
     pub cloud_history: bool,
+    pub taa: bool,
     pub reference: bool,
     pub sun: [f64; 3],
     pub cloud_cover: f64,
@@ -117,7 +120,7 @@ pub struct Settings {
     pub ground_detail: bool,
     pub fetch_limits: bool,
     pub cloud_scale: u32,
-    /// Animated cloud fields (weather atlas, local volume, light profiles)
+    /// Animated cloud fields (weather atlas and light profiles)
     /// refresh one in this many texels per frame; a time jump or parameter
     /// change refreshes everything at once.
     pub cloud_refresh: u32,
@@ -192,6 +195,7 @@ impl Default for Settings {
             clouds: true,
             water: true,
             cloud_history: false,
+            taa: false,
             reference: true,
             sun: [-0.45, 0.8, 0.38],
             cloud_cover: 0.11,
@@ -424,6 +428,17 @@ struct Frame {
     sky_high: [f32; 4],
     cover: [f32; 4],
     starlight: [f32; 4],
+    // Sample offset in pixels, temporal resolve enabled, previous image usable.
+    temporal: [f32; 4],
+}
+fn dispatch_weather(pass: &mut wgpu::ComputePass<'_>, frame: &Frame, face_size: u32) {
+    let divisor = if frame.cloud_cache[2] != 0 {
+        1
+    } else {
+        frame.cloud_cache[1].max(1)
+    };
+    let padded = face_size + 2;
+    pass.dispatch_workgroups(padded.div_ceil(8), (6 * padded).div_ceil(8 * divisor), 1);
 }
 fn four(v: V3, w: f32) -> [f32; 4] {
     [v[0] as f32, v[1] as f32, v[2] as f32, w]
@@ -441,34 +456,6 @@ pub struct Texture {
     pub bytes: u64,
 }
 impl Texture {
-    fn cloud_volume(
-        g: &Gpu,
-        label: &str,
-        format: wgpu::TextureFormat,
-        bpp: u64,
-        size: u32,
-    ) -> Self {
-        let texture = g.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some(label),
-            size: wgpu::Extent3d {
-                width: size,
-                height: size,
-                depth_or_array_layers: size,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D3,
-            format,
-            usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
-        let view = texture.create_view(&Default::default());
-        Self {
-            texture,
-            view,
-            bytes: u64::from(size).pow(3) * bpp,
-        }
-    }
     fn new(
         g: &Gpu,
         label: &str,
@@ -517,18 +504,24 @@ pub struct Targets {
     proxy_depth: Texture,
     /// The frame in linear light, before exposure and the tone curve (finish.rs makes `display` from it).
     pub hdr: Texture,
+    resolved: [Texture; 2],
     pub display: Texture,
     pub cw: u32,
     pub ch: u32,
 }
 impl Targets {
-    fn new(g: &Gpu, w: u32, h: u32, scale: u32, far_scale: u32) -> Self {
+    fn new(g: &Gpu, w: u32, h: u32, scale: u32, far_scale: u32, taa: bool) -> Self {
         use wgpu::{TextureFormat as F, TextureUsages as U};
         let sampled = U::TEXTURE_BINDING | U::COPY_SRC;
         let output = sampled | U::STORAGE_BINDING;
         let render = sampled | U::RENDER_ATTACHMENT;
         let (cw, ch) = (w.div_ceil(scale), h.div_ceil(scale));
-        let (fw, fh) = (cw.div_ceil(far_scale), ch.div_ceil(far_scale));
+        // The single-rate path only needs a valid binding for the untaken branch.
+        let (fw, fh) = if far_scale == 1 {
+            (1, 1)
+        } else {
+            (cw.div_ceil(far_scale), ch.div_ceil(far_scale))
+        };
         Self {
             position: Texture::new(g, "camera local position", w, h, F::Rgba32Float, render, 16),
             normal: Texture::new(g, "filtered normal", w, h, F::Rgba16Float, render, 8),
@@ -604,6 +597,17 @@ impl Targets {
                 output,
                 16,
             ),
+            resolved: std::array::from_fn(|_| {
+                Texture::new(
+                    g,
+                    "temporal HDR history",
+                    if taa { w } else { 1 },
+                    if taa { h } else { 1 },
+                    F::Rgba16Float,
+                    output,
+                    8,
+                )
+            }),
             hdr: Texture::new(g, "hdr", w, h, F::Rgba16Float, output, 8),
             display: Texture::new(
                 g,
@@ -628,6 +632,7 @@ impl Targets {
             + self.shade.bytes
             + self.water.bytes
             + self.hdr.bytes
+            + self.resolved[0].bytes * 2
             + self.display.bytes
             + self.far.bytes
             + self.far_guide.bytes
@@ -662,10 +667,9 @@ pub struct Pipelines {
     cloud: Option<wgpu::ComputePipeline>,
     cloud_far: Option<wgpu::ComputePipeline>,
     weather: wgpu::ComputePipeline,
-    cloud_begin: wgpu::ComputePipeline,
-    cloud_local: Option<wgpu::ComputePipeline>,
     lut: wgpu::ComputePipeline,
     composite: wgpu::ComputePipeline,
+    temporal: wgpu::ComputePipeline,
 }
 impl Pipelines {
     /// Create every deferred program whose compilation has finished.
@@ -675,7 +679,6 @@ impl Pipelines {
             (&mut self.water, "water"),
             (&mut self.cloud, "cloud_pass"),
             (&mut self.cloud_far, "cloud_far_pass"),
-            (&mut self.cloud_local, "cloud_local_generate"),
             (&mut self.scenery_shade, "scenery_shade"),
             (&mut self.shade, "shade"),
         ] {
@@ -711,7 +714,7 @@ impl Pipelines {
             && self.water_mesh_cap.is_some()
     }
     fn clouds_ready(&self) -> bool {
-        self.cloud.is_some() && self.cloud_far.is_some() && self.cloud_local.is_some()
+        self.cloud.is_some() && self.cloud_far.is_some()
     }
     fn scenery_ready(&self) -> bool {
         self.scenery_shade.is_some()
@@ -859,10 +862,9 @@ pub struct Bindings {
     cloud: Option<[wgpu::BindGroup; 2]>,
     cloud_far: Option<wgpu::BindGroup>,
     weather: wgpu::BindGroup,
-    cloud_begin: wgpu::BindGroup,
-    cloud_local: Option<wgpu::BindGroup>,
     lut: wgpu::BindGroup,
     composite: [wgpu::BindGroup; 2],
+    temporal: [[wgpu::BindGroup; 2]; 2],
 }
 fn half_to_f32(h: u16) -> f32 {
     let sign = u32::from(h >> 15) << 31;
@@ -885,7 +887,18 @@ fn half_to_f32(h: u16) -> f32 {
     };
     f32::from_bits(bits)
 }
+#[derive(Clone, Copy, Default)]
+struct SpacePose {
+    eye: V3,
+    right: V3,
+    up: V3,
+    forward: V3,
+    seconds: f64,
+}
 pub struct Renderer {
+    space_pose: SpacePose,
+    previous_space: Option<SpacePose>,
+    last_resolve: Option<(usize, bool)>,
     pub gpu: Gpu,
     pub tier: crate::tier::Tier,
     pub settings: Settings,
@@ -942,16 +955,12 @@ pub struct Renderer {
     indices: wgpu::Buffer,
     lut: Texture,
     weather: Texture,
-    cloud_local: Texture,
-    cloud_light: Texture,
-    cloud_cache: wgpu::Buffer,
+    cloud_shape: crate::clouds::CloudShape,
     cloud_sampler: wgpu::Sampler,
-    cloud_wrap_sampler: wgpu::Sampler,
-    /// Weather/sun parameters that force a complete cloud field refresh.
+    /// Weather parameters that force a complete atlas refresh.
     cloud_signature: Vec<f64>,
-    /// Sun direction of the last complete cloud field refresh, and of the last frame.
-    cloud_baked_sun: Option<V3>,
-    cloud_last_sun: Option<V3>,
+    weather_settle: u32,
+    /// Set on restore or when deferred weather consumers become ready.
     pub cloud_force_refresh: bool,
     pipelines: Pipelines,
     bindings: Bindings,
@@ -971,6 +980,30 @@ pub struct Renderer {
     pub camera_up: Option<V3>,
 }
 impl Renderer {
+    fn temporal_enabled(&self) -> bool {
+        self.settings.taa
+            && self.settings.debug == 0
+            && self.settings.shadow_diagnostic == 0
+            && self.settings.cloud_diagnostic == 0
+    }
+    fn jitter(&self) -> [f32; 2] {
+        // Centred, eight-sample Halton (bases 2 and 3).
+        const OFFSETS: [[f32; 2]; 8] = [
+            [0.0546875, -1.0 / 6.0],
+            [-0.1953125, 1.0 / 6.0],
+            [0.3046875, -7.0 / 18.0],
+            [-0.3203125, -1.0 / 18.0],
+            [0.1796875, 5.0 / 18.0],
+            [-0.0703125, -5.0 / 18.0],
+            [0.4296875, 1.0 / 18.0],
+            [-0.3828125, 7.0 / 18.0],
+        ];
+        if self.temporal_enabled() {
+            OFFSETS[self.frame_id as usize % 8]
+        } else {
+            [0.0; 2]
+        }
+    }
     fn internal_size(w: u32, h: u32, scale: f64) -> (u32, u32) {
         (
             ((f64::from(w) * scale).round() as u32).max(1),
@@ -1090,10 +1123,9 @@ impl Renderer {
             cloud: None,
             cloud_far: None,
             weather: compute("weather_generate"),
-            cloud_begin: compute("cloud_cache_begin"),
-            cloud_local: None,
             lut: compute("atmosphere_lut"),
             composite: compute("composite"),
+            temporal: compute("temporal_resolve"),
         };
         use wgpu::BufferUsages as U;
         let uniform = g.buffer(
@@ -1131,6 +1163,7 @@ impl Renderer {
             height,
             settings.cloud_scale,
             settings.cloud_far_scale,
+            settings.taa,
         );
         let lut = Texture::new(
             g,
@@ -1159,37 +1192,9 @@ impl Renderer {
         let finish = crate::finish::Finish::new(g);
         crate::startup::mark("space");
         let water_system = crate::water::Water::new(g, &projected, &tier, &page_bindings);
-        let cloud_local = Texture::cloud_volume(
-            g,
-            "local cloud density, kind, base and thickness",
-            wgpu::TextureFormat::Rgba16Float,
-            8,
-            tier.cloud_cache,
-        );
-        // Per-column weather (kind, base, thickness) of the volume; density
-        // and direct light share one voxel fetch.
-        let cloud_light = Texture::new(
-            g,
-            "cloud volume column weather",
-            tier.cloud_cache,
-            tier.cloud_cache,
-            wgpu::TextureFormat::Rgba16Float,
-            wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING,
-            8,
-        );
-        let cloud_cache = g.buffer("cloud volume window state", 64, U::STORAGE | U::COPY_SRC);
+        let cloud_shape = crate::clouds::CloudShape::new(g);
         let cloud_sampler = g.device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("cloud field interpolation"),
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            ..Default::default()
-        });
-        // Toroidal volume: repeat laterally, clamp radially.
-        let cloud_wrap_sampler = g.device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("toroidal cloud volume interpolation"),
-            address_mode_u: wgpu::AddressMode::Repeat,
-            address_mode_v: wgpu::AddressMode::Repeat,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
             ..Default::default()
@@ -1247,11 +1252,8 @@ impl Renderer {
             &lut,
             &water_system,
             &weather,
-            &cloud_local,
-            &cloud_light,
-            &cloud_cache,
+            &cloud_shape,
             &cloud_sampler,
-            &cloud_wrap_sampler,
             &scenery,
             &sun_system,
             &page_bindings,
@@ -1315,17 +1317,17 @@ impl Renderer {
             bindings,
             water_system,
             weather,
-            cloud_local,
-            cloud_light,
-            cloud_cache,
+            cloud_shape,
             cloud_sampler,
-            cloud_wrap_sampler,
+
             cloud_signature: Vec::new(),
-            cloud_baked_sun: None,
-            cloud_last_sun: None,
+            weather_settle: 0,
             cloud_force_refresh: true,
             frame: bytemuck::Zeroable::zeroed(),
             previous: None,
+            space_pose: SpacePose::default(),
+            previous_space: None,
+            last_resolve: None,
             frame_id: 0,
             lut_dirty: true,
             time: 0.0,
@@ -1379,6 +1381,7 @@ impl Renderer {
             &self.projected,
             &self.weather.view,
             &self.cloud_sampler,
+            &self.cloud_shape,
         );
         if pipelines {
             self.bindings = Self::bindings(
@@ -1392,11 +1395,8 @@ impl Renderer {
                 &self.lut,
                 &self.water_system,
                 &self.weather,
-                &self.cloud_local,
-                &self.cloud_light,
-                &self.cloud_cache,
+                &self.cloud_shape,
                 &self.cloud_sampler,
-                &self.cloud_wrap_sampler,
                 &self.scenery,
                 &self.sun_system,
                 &self.page_bindings,
@@ -1405,7 +1405,7 @@ impl Renderer {
         }
         if pipelines || sun || scenery {
             // Refresh requests consumed while a feature's programs were still
-            // pending wrote nothing: rebuild the cloud volume and profiles.
+            // pending wrote nothing: rebuild the weather and light profiles.
             self.cloud_force_refresh = true;
             self.sun_system.invalidate();
         }
@@ -1423,11 +1423,8 @@ impl Renderer {
         l: &Texture,
         water: &crate::water::Water,
         weather: &Texture,
-        cloud_local: &Texture,
-        cloud_light: &Texture,
-        cloud_cache: &wgpu::Buffer,
+        cloud_shape: &crate::clouds::CloudShape,
         cloud_sampler: &wgpu::Sampler,
-        cloud_wrap_sampler: &wgpu::Sampler,
         scenery: &crate::scenery::Scenery,
         sun_system: &crate::sun::Sun,
         pages: &crate::pages::PageBindings,
@@ -1477,6 +1474,9 @@ impl Renderer {
                     entries: &{
                         let mut all = entries.to_vec();
                         let used = crate::startup::program_bindings(key);
+                        if used.contains(&49) {
+                            all.extend(cloud_shape.entries());
+                        }
                         for (i, buffer) in [
                             (127, &scenery.urban.sources),
                             (128, &scenery.urban.points),
@@ -1508,29 +1508,6 @@ impl Renderer {
                 &p.weather,
                 &[b(0, u), tex(45, &weather.view)],
             ),
-            cloud_begin: group(
-                "cloud_cache_begin",
-                &p.cloud_begin,
-                &[b(0, u), b(84, cloud_cache)],
-            ),
-            cloud_local: p.cloud_local.as_ref().map(|pipeline| {
-                sun_group(
-                    "cloud_local_generate",
-                    pipeline,
-                    &[
-                        b(0, u),
-                        tex(46, &weather.view),
-                        tex(48, &cloud_local.view),
-                        wgpu::BindGroupEntry {
-                            binding: 50,
-                            resource: wgpu::BindingResource::Sampler(cloud_sampler),
-                        },
-                        b(84, cloud_cache),
-                        tex(85, &cloud_light.view),
-                    ],
-                    false,
-                )
-            }),
             ocean: p.ocean.as_ref().map(|pipeline| {
                 g.device.create_bind_group(&wgpu::BindGroupDescriptor {
                     label: Some("shared sea geometry"),
@@ -1628,11 +1605,6 @@ impl Renderer {
                         tex(6, &t.normal.view),
                         tex(7, &t.shade.view),
                         tex(62, &t.material.view),
-                        tex(46, &weather.view),
-                        wgpu::BindGroupEntry {
-                            binding: 50,
-                            resource: wgpu::BindingResource::Sampler(cloud_sampler),
-                        },
                     ],
                     true,
                 )
@@ -1647,11 +1619,6 @@ impl Renderer {
                         tex(5, &t.position.view),
                         tex(6, &t.normal.view),
                         tex(7, &t.shade.view),
-                        tex(46, &weather.view),
-                        wgpu::BindGroupEntry {
-                            binding: 50,
-                            resource: wgpu::BindingResource::Sampler(cloud_sampler),
-                        },
                     ],
                     true,
                 )
@@ -1685,11 +1652,6 @@ impl Renderer {
                         b(43, &water.bed),
                         tex(27, &t.ocean.view),
                         tex(44, &t.ocean_cap.view),
-                        tex(46, &weather.view),
-                        wgpu::BindGroupEntry {
-                            binding: 50,
-                            resource: wgpu::BindingResource::Sampler(cloud_sampler),
-                        },
                     ],
                     true,
                 )
@@ -1703,22 +1665,16 @@ impl Renderer {
                             b(0, u),
                             tex(5, &t.position.view),
                             tex(11, &t.cloud[i].view),
+                            tex(10, &t.water.view),
                             tex(12, &t.guide[i].view),
                             tex(15, &t.cloud[1 - i].view),
                             tex(16, &t.guide[1 - i].view),
                             tex(46, &weather.view),
-                            tex(49, &cloud_local.view),
                             wgpu::BindGroupEntry {
                                 binding: 50,
                                 resource: wgpu::BindingResource::Sampler(cloud_sampler),
                             },
                             tex(27, &t.ocean.view),
-                            b(84, cloud_cache),
-                            tex(86, &cloud_light.view),
-                            wgpu::BindGroupEntry {
-                                binding: 87,
-                                resource: wgpu::BindingResource::Sampler(cloud_wrap_sampler),
-                            },
                             tex(90, &t.far.view),
                             tex(91, &t.far_guide.view),
                         ],
@@ -1734,25 +1690,41 @@ impl Renderer {
                         b(0, u),
                         tex(5, &t.position.view),
                         tex(46, &weather.view),
-                        tex(49, &cloud_local.view),
                         wgpu::BindGroupEntry {
                             binding: 50,
                             resource: wgpu::BindingResource::Sampler(cloud_sampler),
                         },
                         tex(27, &t.ocean.view),
-                        b(84, cloud_cache),
-                        tex(86, &cloud_light.view),
-                        wgpu::BindGroupEntry {
-                            binding: 87,
-                            resource: wgpu::BindingResource::Sampler(cloud_wrap_sampler),
-                        },
                         tex(88, &t.far.view),
+                        tex(10, &t.water.view),
                         tex(89, &t.far_guide.view),
                     ],
                     false,
                 )
             }),
             lut: group("atmosphere_lut", &p.lut, &[b(0, u), tex(17, &l.view)]),
+            temporal: std::array::from_fn(|space_only| {
+                std::array::from_fn(|i| {
+                    group(
+                        "temporal_resolve",
+                        &p.temporal,
+                        &[
+                            b(0, u),
+                            tex(121, space.distance_view()),
+                            tex(
+                                191,
+                                if space_only == 1 {
+                                    space.color_view()
+                                } else {
+                                    &t.hdr.view
+                                },
+                            ),
+                            tex(192, &t.resolved[1 - i].view),
+                            tex(193, &t.resolved[i].view),
+                        ],
+                    )
+                })
+            }),
             composite: std::array::from_fn(|i| {
                 sun_group(
                     "composite",
@@ -1767,18 +1739,11 @@ impl Renderer {
                         tex(18, &l.view),
                         tex(19, &t.hdr.view),
                         tex(46, &weather.view),
-                        tex(49, &cloud_local.view),
                         wgpu::BindGroupEntry {
                             binding: 50,
                             resource: wgpu::BindingResource::Sampler(cloud_sampler),
                         },
                         tex(27, &t.ocean.view),
-                        b(84, cloud_cache),
-                        tex(86, &cloud_light.view),
-                        wgpu::BindGroupEntry {
-                            binding: 87,
-                            resource: wgpu::BindingResource::Sampler(cloud_wrap_sampler),
-                        },
                         wgpu::BindGroupEntry {
                             binding: 120,
                             resource: wgpu::BindingResource::TextureView(space.color_view()),
@@ -1818,6 +1783,7 @@ impl Renderer {
             h,
             self.settings.cloud_scale,
             self.settings.cloud_far_scale,
+            self.settings.taa,
         );
         self.resize_peak = self
             .resize_peak
@@ -1842,17 +1808,15 @@ impl Renderer {
             &self.lut,
             &self.water_system,
             &self.weather,
-            &self.cloud_local,
-            &self.cloud_light,
-            &self.cloud_cache,
+            &self.cloud_shape,
             &self.cloud_sampler,
-            &self.cloud_wrap_sampler,
             &self.scenery,
             &self.sun_system,
             &self.page_bindings,
             &self.space,
         );
         self.previous = None;
+        self.previous_space = None;
     }
     pub fn configure(&mut self, mut s: Settings) -> Result<(), String> {
         self.asked = Some(Asked::of(&s));
@@ -1881,7 +1845,8 @@ impl Renderer {
             }
             self.skin = next;
         }
-        if s.cloud_scale != self.settings.cloud_scale
+        if s.taa != self.settings.taa
+            || s.cloud_scale != self.settings.cloud_scale
             || s.cloud_far_scale != self.settings.cloud_far_scale
             || width != self.width
             || height != self.height
@@ -1894,6 +1859,7 @@ impl Renderer {
                 self.height,
                 s.cloud_scale,
                 s.cloud_far_scale,
+                s.taa,
             );
             self.resize_peak = self.resize_peak.max(self.resource_bytes() + t.bytes());
             self.targets = t;
@@ -1903,6 +1869,7 @@ impl Renderer {
         }
         self.settings = s;
         self.previous = None;
+        self.previous_space = None;
         Ok(())
     }
     /// The canonical surface on the CPU: camera constraints, bookmarks and audits.
@@ -1926,25 +1893,8 @@ impl Renderer {
                 std::mem::size_of::<Frame>() as u64,
                 wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             );
-            let weather_pipeline = &self.pipelines.weather;
-            let weather = self
-                .gpu
-                .device
-                .create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some("far weather"),
-                    layout: &weather_pipeline.get_bind_group_layout(0),
-                    entries: &[
-                        wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: uniform.as_entire_binding(),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 45,
-                            resource: wgpu::BindingResource::TextureView(&self.weather.view),
-                        },
-                    ],
-                });
             let pipeline = compute_pipeline(&self.gpu, "cloud_far_map");
+            let [shape_view, shape_sampler] = self.cloud_shape.entries();
             let map = self
                 .gpu
                 .device
@@ -1956,14 +1906,8 @@ impl Renderer {
                             binding: 0,
                             resource: uniform.as_entire_binding(),
                         },
-                        wgpu::BindGroupEntry {
-                            binding: 46,
-                            resource: wgpu::BindingResource::TextureView(&self.weather.view),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 50,
-                            resource: wgpu::BindingResource::Sampler(&self.cloud_sampler),
-                        },
+                        shape_view,
+                        shape_sampler,
                         wgpu::BindGroupEntry {
                             binding: 123,
                             resource: wgpu::BindingResource::TextureView(out),
@@ -1974,12 +1918,14 @@ impl Renderer {
             earth.world = "earth".into();
             FarClouds {
                 uniform,
-                weather,
                 pipeline,
                 map,
                 width: far_width,
                 first_row: 0,
                 cold: true,
+                last_weather: None,
+                last_clock: Default::default(),
+                pending_frames: 0,
                 seed: earth.skin().geology.seed,
             }
         });
@@ -1999,6 +1945,10 @@ impl Renderer {
         let Some(far) = &mut self.far_clouds else {
             return;
         };
+        if self.body.naif == 399 && far.seed != self.skin.geology.seed {
+            far.seed = self.skin.geology.seed;
+            far.last_weather = None;
+        }
         let asked = self.asked.map_or(self.settings.clouds, |a| a.clouds);
         let surface_has_it =
             self.surface_shown && self.body.naif == 399 && self.surface_blend >= 1.0;
@@ -2007,11 +1957,38 @@ impl Renderer {
         }
         let earth = BodyDescriptor::of_naif(399).expect("Earth is in the table");
         let height = far.width / 2;
-        let rows = if far.cold {
-            height
+        let weather = [
+            self.settings.cloud_cover,
+            self.settings.cloud_turbulence,
+            self.settings.cloud_type,
+        ];
+        let clock = self.cloud_clock;
+        // A settings edit, seek or long absence must replace the entire visible
+        // planet coherently. Ordinary wind moves much less than an orbital texel.
+        let full = far.cold
+            || far.last_weather != Some(weather)
+            || (clock.evolution - far.last_clock.evolution).abs() > 30.
+            || (clock.travel - far.last_clock.travel).abs() > 30.
+            || (clock.drift[0] - far.last_clock.drift[0])
+                .hypot(clock.drift[1] - far.last_clock.drift[1])
+                > 2000.;
+        if clock.evolution != far.last_clock.evolution
+            || clock.travel != far.last_clock.travel
+            || clock.drift != far.last_clock.drift
+        {
+            far.pending_frames = 64;
+        }
+        if !full && far.pending_frames == 0 {
+            return;
+        }
+        far.last_weather = Some(weather);
+        far.last_clock = clock;
+        far.pending_frames = if full {
+            0
         } else {
-            height.div_ceil(64)
+            far.pending_frames.saturating_sub(1)
         };
+        let rows = if full { height } else { height.div_ceil(64) };
         let words = self.tier.frame_words();
         let mut frame = self.frame;
         frame.sun[3] = self.settings.cloud_cover as f32;
@@ -2031,7 +2008,6 @@ impl Renderer {
             0.0,
             0.0,
         ];
-        frame.cloud_cache = [self.frame_id as u32, 64, far.cold as u32, 1];
         frame.tier_a = words[0];
         frame.tier_b = words[1];
         frame.tier_c = words[2];
@@ -2043,13 +2019,6 @@ impl Renderer {
             label: Some("far clouds"),
             timestamp_writes: None,
         });
-        // With Earth's surface running, its frames already keep the weather up.
-        if far.cold || !(self.surface_shown && self.body.naif == 399) {
-            p.set_pipeline(&self.pipelines.weather);
-            p.set_bind_group(0, &far.weather, &[]);
-            let padded = self.tier.weather_face + 2;
-            p.dispatch_workgroups(padded.div_ceil(64), 6 * padded, 1);
-        }
         p.set_pipeline(&far.pipeline);
         p.set_bind_group(0, &far.map, &[]);
         p.dispatch_workgroups(far.width.div_ceil(64), rows, 1);
@@ -2105,6 +2074,7 @@ impl Renderer {
         self.revision += 1;
         self.lut_dirty = true;
         self.previous = None;
+        self.previous_space = None;
         self.cloud_force_refresh = true;
         self.sun_system.invalidate();
         self.table_quiet = 0;
@@ -2295,6 +2265,17 @@ impl Renderer {
         self.space
             .set_belt_field(&self.gpu, [packet[27], packet[28], packet[29]], packet[30]);
         let icrf = [f3(v3(14)), f3(v3(17)), f3(v3(20))];
+        // The packet's rows map inertial axes into the current render frame.
+        // Keep the history camera in inertial axes across changes of that frame.
+        let inertial =
+            |v: V3| std::array::from_fn(|j| (0..3).map(|i| packet[14 + 3 * i + j] * v[i]).sum());
+        self.space_pose = SpacePose {
+            eye: v3(27),
+            right: inertial(right),
+            up: inertial(up),
+            forward: inertial(forward),
+            seconds: packet[23],
+        };
         self.space.set_view(
             &self.gpu,
             f3(right),
@@ -2303,6 +2284,7 @@ impl Renderer {
             self.width,
             self.height,
             icrf,
+            self.jitter(),
             self.settings.exposure as f32,
         );
         Ok(changed)
@@ -2373,21 +2355,6 @@ impl Renderer {
         // Cloud field refresh policy: parameter changes and time jumps larger
         // than one long frame refresh every texel; ordinary animation refreshes
         // an interleaved fraction so repeated epochs still reproduce exactly.
-        // The solar clock turns the sun every frame; an exact sun in the signature made
-        // every frame a parameter change. Below SUN_REBAKE_ANGLE since the last complete
-        // refresh the sun's drift is refreshed like animation, an interleaved fraction
-        // per frame (sun.rs does the same for the cloud shadow profiles).
-        let sun_now = field::normalized(self.settings.sun);
-        let drift = self.cloud_baked_sun.map_or(f64::INFINITY, |b| {
-            field::dot(b, sun_now).clamp(-1., 1.).acos()
-        });
-        if drift > crate::sun::SUN_REBAKE_ANGLE {
-            self.cloud_baked_sun = Some(sun_now);
-        }
-        let sun_drifting =
-            drift <= crate::sun::SUN_REBAKE_ANGLE && self.cloud_last_sun != Some(sun_now);
-        self.cloud_last_sun = Some(sun_now);
-        let baked_sun = self.cloud_baked_sun.unwrap_or(sun_now);
         let signature = vec![
             self.settings.cloud_cover,
             self.settings.cloud_type,
@@ -2395,10 +2362,6 @@ impl Renderer {
             f64::from(self.skin.geology.seed),
             f64::from(self.revision),
             f64::from(self.settings.clouds as u32),
-            f64::from(self.settings.shadows as u32),
-            baked_sun[0],
-            baked_sun[1],
-            baked_sun[2],
         ];
         let jump = (self.cloud_clock.time - previous_clock.time).abs() > 0.26
             || (self.cloud_clock.travel - previous_clock.travel).abs()
@@ -2407,16 +2370,22 @@ impl Renderer {
                 > 0.26 * self.settings.cloud_evolution.max(1.0);
         let animated = self.cloud_clock.travel != previous_clock.travel
             || self.cloud_clock.evolution != previous_clock.evolution
-            || self.cloud_clock.drift != previous_clock.drift
-            || sun_drifting;
+            || self.cloud_clock.drift != previous_clock.drift;
         let cloud_params_dirty =
             self.cloud_force_refresh || signature != self.cloud_signature || (animated && jump);
+        if cloud_params_dirty {
+            self.weather_settle = 0;
+        } else if animated {
+            self.weather_settle = self.settings.cloud_refresh;
+        }
+        let refresh = self.weather_settle > 0;
+        self.weather_settle = self.weather_settle.saturating_sub(1);
         self.cloud_signature = signature;
         self.cloud_force_refresh = false;
         self.sun_system.set_animation(
             self.frame_id as u32,
             self.settings.cloud_refresh,
-            animated && !cloud_params_dirty,
+            refresh,
             cloud_params_dirty,
         );
         // Frames since a page table last changed, for what must wait for them to go quiet.
@@ -2508,7 +2477,7 @@ impl Renderer {
                 self.frame_id as u32,
                 self.settings.cloud_refresh,
                 cloud_params_dirty as u32,
-                (animated && !cloud_params_dirty) as u32,
+                refresh as u32,
             ],
             cloud_far: [
                 self.settings.cloud_far_scale as f32,
@@ -2565,6 +2534,24 @@ impl Renderer {
             air_scatter: self.starlit(self.body.air_colour_words()[0]),
             sky_low: self.starlit(self.body.air_colour_words()[1]),
             sky_high: self.starlit(self.body.air_colour_words()[2]),
+            temporal: {
+                let enabled = self.temporal_enabled();
+                let valid = enabled
+                    && self.previous.is_some()
+                    && old.temporal[2] > 0.0
+                    && dt < 0.2
+                    && field::dot(forward, std::array::from_fn(|i| f64::from(old.forward[i])))
+                        > 0.75
+                    && field::length(field::sub(eye, self.last_camera))
+                        < (self.body.radius * 0.12).clamp(1000.0, 100000.0);
+                let offset = self.jitter();
+                [
+                    offset[0],
+                    offset[1],
+                    enabled as u32 as f32,
+                    valid as u32 as f32,
+                ]
+            },
             starlight: [
                 self.space.starlight[0],
                 self.space.starlight[1],
@@ -2667,6 +2654,7 @@ impl Renderer {
         dt: f64,
         slot: Option<usize>,
     ) -> Result<(), String> {
+        self.last_resolve = None;
         let start = crate::now_ms();
         if let Some(query_set) = slot.and_then(|i| self.timing.slots[i].queries.as_ref()) {
             let _p = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -2702,15 +2690,34 @@ impl Renderer {
                 } else {
                     self.pages.flush(&self.gpu, self.frame_id);
                 }
-                self.frame_id += 1;
                 self.space.encode_rocks(encoder);
                 self.marker.mark(encoder, "space_rocks");
-                // The layer is the frame.
+                self.previous = None;
+                let parity = self.frame_id as usize % 2;
+                let (scene, key) = if self.temporal_enabled() {
+                    let frame = self.space_temporal_frame(dt);
+                    self.gpu
+                        .queue
+                        .write_buffer(&self.projected, 0, bytemuck::bytes_of(&frame));
+                    self.resolve_temporal(encoder, parity, true);
+                    self.last_resolve = Some((parity, frame.temporal[3] > 0.0));
+                    self.previous_space = Some(self.space_pose);
+                    (
+                        &self.targets.resolved[parity].view,
+                        (u64::from(self.target_serial) << 2) | 2 | parity as u64,
+                    )
+                } else {
+                    self.previous_space = None;
+                    (
+                        self.space.color_view(),
+                        1 << 63 | u64::from(self.space.serial),
+                    )
+                };
                 self.finish.encode(
                     &self.gpu,
                     encoder,
-                    self.space.color_view(),
-                    1 << 63 | u64::from(self.space.serial),
+                    scene,
+                    key,
                     (self.width, self.height),
                     &self.targets.display.view,
                     self.settings.finish(&self.space.star_sources(), dt),
@@ -2720,6 +2727,7 @@ impl Renderer {
                 return Ok(());
             }
         }
+        self.previous_space = None;
         let clouds_active = self.clouds_active();
         let water_active = self.ocean_active();
         self.update_pages(camera, dt);
@@ -2744,7 +2752,6 @@ impl Renderer {
             &self.gpu,
             camera[0],
             &self.settings,
-            self.cloud_clock,
             self.revision,
             queries.is_some(),
             &self.body,
@@ -2763,14 +2770,12 @@ impl Renderer {
             });
             // Stamp the empty interval too: query slots are reused, so leaving
             // this stage unwritten would report an earlier cloudy frame.
-            p.set_pipeline(&self.pipelines.cloud_begin);
-            p.set_bind_group(0, &self.bindings.cloud_begin, &[]);
-            p.dispatch_workgroups(1, 1, 1);
-            if self.settings.clouds {
+            if self.settings.clouds
+                && (self.frame.cloud_cache[2] != 0 || self.frame.cloud_cache[3] != 0)
+            {
                 p.set_pipeline(&self.pipelines.weather);
                 p.set_bind_group(0, &self.bindings.weather, &[]);
-                let padded = self.tier.weather_face + 2;
-                p.dispatch_workgroups(padded.div_ceil(64), 6 * padded, 1);
+                dispatch_weather(&mut p, &self.frame, self.tier.weather_face);
             }
         }
         self.marker.mark(encoder, "cloud_fields");
@@ -2782,30 +2787,17 @@ impl Renderer {
             &mut self.marker,
         );
         self.marker.mark(encoder, "sun_tail");
-        {
-            // The local volume stores direct sunlight per voxel, so it follows
-            // the sun profile maps. Retained voxels skip work; animation
-            // refreshes an interleaved fraction (settings.cloud_refresh).
-            let mut p = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("cloud_volume"),
-                timestamp_writes: queries.map(|q| wgpu::ComputePassTimestampWrites {
-                    query_set: q,
+        // Keep the historical cloud-volume timestamp slot valid for telemetry.
+        if let Some(query_set) = queries {
+            let _stamp = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("retired cloud volume stage"),
+                timestamp_writes: Some(wgpu::ComputePassTimestampWrites {
+                    query_set,
                     beginning_of_pass_write_index: Some(56),
                     end_of_pass_write_index: Some(57),
                 }),
             });
-            if let (true, Some(pipeline), Some(group)) = (
-                clouds_active,
-                self.pipelines.cloud_local.as_ref(),
-                self.bindings.cloud_local.as_ref(),
-            ) {
-                p.set_pipeline(pipeline);
-                p.set_bind_group(0, group, &[]);
-                let size = self.tier.cloud_cache;
-                p.dispatch_workgroups(size.div_ceil(64), size, size);
-            }
         }
-        self.marker.mark(encoder, "cloud_volume");
         let writes = |stage: u32| {
             queries.map(|q| wgpu::ComputePassTimestampWrites {
                 query_set: q,
@@ -3167,11 +3159,22 @@ impl Renderer {
             ];
             self.marker.mark(encoder, STAGE_MARKS[stage]);
         }
+        let temporal = self.frame.temporal[2] > 0.0;
+        let (scene, key) = if temporal {
+            self.resolve_temporal(encoder, parity, false);
+            self.last_resolve = Some((parity, self.frame.temporal[3] > 0.0));
+            (
+                &self.targets.resolved[parity].view,
+                (u64::from(self.target_serial) << 2) | 2 | parity as u64,
+            )
+        } else {
+            (&self.targets.hdr.view, u64::from(self.target_serial) << 2)
+        };
         self.finish.encode(
             &self.gpu,
             encoder,
-            &self.targets.hdr.view,
-            u64::from(self.target_serial),
+            scene,
+            key,
             (self.width, self.height),
             &self.targets.display.view,
             self.settings.finish(&self.flare_sources(), dt),
@@ -3179,6 +3182,52 @@ impl Renderer {
         );
         self.last_encode_ms = crate::now_ms() - start;
         Ok(())
+    }
+    fn resolve_temporal(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        parity: usize,
+        space_only: bool,
+    ) {
+        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("temporal resolve"),
+            timestamp_writes: None,
+        });
+        pass.set_pipeline(&self.pipelines.temporal);
+        pass.set_bind_group(0, &self.bindings.temporal[space_only as usize][parity], &[]);
+        pass.dispatch_workgroups(self.width.div_ceil(8), self.height.div_ceil(8), 1);
+        drop(pass);
+        self.marker.mark(encoder, "temporal_resolve");
+    }
+    fn space_temporal_frame(&self, dt: f64) -> Frame {
+        let pose = self.space_pose;
+        let old = self.previous_space.unwrap_or(pose);
+        let delta = field::sub(pose.eye, old.eye);
+        let valid = self.previous_space.is_some()
+            && dt < 0.2
+            && (pose.seconds - old.seconds).abs() < 5.0
+            && field::dot(old.forward, pose.forward) > 0.75
+            && field::length(delta) < 1e10;
+        let jitter = self.jitter();
+        let mut frame = self.frame;
+        frame.view = [
+            self.width as f32,
+            self.height as f32,
+            self.width as f32 / self.height as f32,
+            30_f32.to_radians().tan(),
+        ];
+        frame.temporal = [jitter[0], jitter[1], 2.0, valid as u32 as f32];
+        frame.right = four(pose.right, 0.0);
+        frame.up = four(pose.up, 0.0);
+        frame.forward = four(pose.forward, 0.0);
+        frame.prev_right = four(old.right, 0.0);
+        frame.prev_up = four(old.up, 0.0);
+        frame.prev_forward = four(old.forward, 0.0);
+        frame.eye_hi = four(delta, 0.0);
+        frame.eye_lo = [0.0; 4];
+        frame.prev_hi = [0.0; 4];
+        frame.prev_lo = [0.0; 4];
+        frame
     }
     /// The lens flare's sources for a frame with a surface pass: the space layer's stars, or on a world of its own the sky's
     /// sun (explorer.wgsl `sun_disk`, whose edge is at a cosine of 0.99993).
@@ -3278,9 +3327,7 @@ impl Renderer {
             + self.finish.bytes()
             + self.lut.bytes
             + self.weather.bytes
-            + self.cloud_local.bytes
-            + self.cloud_light.bytes
-            + self.cloud_cache.size()
+            + crate::clouds::CloudShape::BYTES
             + self.terrain.bytes()
             + self.scenery.bytes()
             + self.sun_system.bytes()
@@ -3318,16 +3365,21 @@ impl Renderer {
         s["scenery"] = self.scenery.stats();
         s["scenery_gpu_bytes"] = self.scenery.bytes().into();
         s["sun_gpu_bytes"] = self.sun_system.bytes().into();
-        s["buildings"] = serde_json::json!({"enabled":self.settings.buildings,"sources":self.buildings.count,"source_points":self.buildings.point_count,"source_capacity":16384,"point_capacity":131072,"range_m":3000,"gpu_bytes":self.buildings.bytes(),"height_provenance":"source estimates"});
+        s["buildings"] = serde_json::json!({"enabled":self.settings.buildings,"sources":self.buildings.count,"source_points":self.buildings.point_count,"source_capacity":16384,"point_capacity":131072,"visibility":"projected size","gpu_bytes":self.buildings.bytes(),"height_provenance":"source estimates"});
         s["sun"] = serde_json::json!({"enabled": self.settings.shadows, "terrain_queries": self.settings.shadow_steps, "height_texels": self.tier.height_texels(), "height_levels": crate::sun::HEIGHT_LEVELS, "height_size": self.tier.sun_height, "caster_capacity_per_stream": self.tier.sun_casters, "cloud_knots":16, "history":false});
-        s["tier"] = serde_json::json!({"name": self.tier.name, "hash_cap": self.tier.hash_cap, "union_cap": self.tier.union_cap, "node_cap": self.tier.node_cap, "scenery_capacity": self.tier.sc_cap(), "patch_cap": self.tier.patch_cap, "shadow_map": self.tier.shadow_map, "cloud_cache": self.tier.cloud_cache, "weather_face": self.tier.weather_face, "atlas": self.tier.atlas, "wave_base": self.tier.wave_base});
+        s["taa_history_used"] = self.last_resolve.is_some_and(|(_, used)| used).into();
+        s["tier"] = serde_json::json!({"name": self.tier.name, "hash_cap": self.tier.hash_cap, "union_cap": self.tier.union_cap, "node_cap": self.tier.node_cap, "scenery_capacity": self.tier.sc_cap(), "patch_cap": self.tier.patch_cap, "shadow_map": self.tier.shadow_map, "cloud_shape_size": crate::clouds::CloudShape::SIDE, "weather_face": self.tier.weather_face, "atlas": self.tier.atlas, "wave_base": self.tier.wave_base});
         s
     }
     pub async fn capture(&self, kind: &str) -> Result<Vec<u8>, String> {
         // The frame in linear light: the composite's, or the space layer when it alone was the frame.
         let space_frame = self.solar_on && !self.surface_shown;
         let (t, bpp): (&wgpu::Texture, u32) = match kind {
-            "hdr" if space_frame => (self.space.color(), 8),
+            "resolved_hdr" if self.last_resolve.is_some() => (
+                &self.targets.resolved[self.last_resolve.unwrap().0].texture,
+                8,
+            ),
+            "hdr" | "resolved_hdr" if space_frame => (self.space.color(), 8),
             "position" => (&self.targets.position.texture, 16),
             "normal" => (&self.targets.normal.texture, 8),
             "shaded" => (&self.targets.shade.texture, 8),
@@ -3335,7 +3387,7 @@ impl Renderer {
             "ocean" => (&self.targets.ocean.texture, 8),
             "ocean-cap" => (&self.targets.ocean_cap.texture, 4),
             "water" => (&self.targets.water.texture, 8),
-            "hdr" => (&self.targets.hdr.texture, 8),
+            "hdr" | "resolved_hdr" => (&self.targets.hdr.texture, 8),
             "cloud" => (
                 &self.targets.cloud[self.frame_id.saturating_sub(1) as usize % 2].texture,
                 8,
@@ -3461,6 +3513,7 @@ impl Renderer {
                 resource: output.as_entire_binding(),
             },
         ]);
+        entries.extend(self.cloud_shape.entries());
         entries.extend(self.page_bindings.audit_entries());
         entries.sort_by_key(|e| e.binding);
         entries.dedup_by_key(|e| e.binding);
@@ -3497,8 +3550,11 @@ impl Renderer {
             .chunks_exact(4)
             .map(|v| u32::from_le_bytes(v.try_into().unwrap()))
             .collect();
+        // cloud_centers starts at byte 80 in SunCacheState. Each w is the
+        // resident half-width of the published square for that level.
+        let radii = [23, 27, 31].map(|word| f32::from_bits(cache_words[word]));
         Ok(
-            serde_json::json!({"samples":&samples[..2048],"fixed_samples":&samples[2048..],"draws":(0..crate::sun::CASCADES * 2).map(|i|counters[i*4+1]).collect::<Vec<_>>(),"overflow":counters[crate::sun::DRAW_WORDS],"casters":counters[crate::sun::DRAW_WORDS + 1],"incomplete_casters":counters[crate::sun::DRAW_WORDS + 2],"gpu_bytes":self.sun_system.bytes(),"height_refills_last_profiled_frame":cache_words[32],"height_refills_profiled_total":u64::from(cache_words[33]) | (u64::from(cache_words[34]) << 32),"profile_rebuild_flags":&cache_words[12..16],"profile_rebuild_frames":&cache_words[16..20],"profile_counter_order":["global_optical","global_solid","local_optical","local_solid"]}),
+            serde_json::json!({"cloud_profile_radii":radii,"samples":&samples[..2048],"fixed_samples":&samples[2048..],"draws":(0..crate::sun::CASCADES).flat_map(|i|[1,6,11,15].map(|offset| counters[i*20+offset])).collect::<Vec<_>>(),"overflow":counters[crate::sun::DRAW_WORDS],"casters":counters[crate::sun::DRAW_WORDS + 1],"incomplete_casters":counters[crate::sun::DRAW_WORDS + 2],"gpu_bytes":self.sun_system.bytes(),"height_refills_last_profiled_frame":cache_words[32],"height_refills_profiled_total":u64::from(cache_words[33]) | (u64::from(cache_words[34]) << 32),"profile_rebuild_flags":&cache_words[12..16],"profile_rebuild_frames":&cache_words[16..20],"profile_counter_order":["global_optical","global_solid","local_optical","local_solid"]}),
         )
     }
     pub async fn audit_shadow_points(&self, points: &[f64]) -> Result<serde_json::Value, String> {
@@ -3559,15 +3615,6 @@ impl Renderer {
                 resource: buffer.as_entire_binding(),
             });
         }
-        // Far receivers march the cloud field directly (sun_cloud_receiver).
-        entries.push(wgpu::BindGroupEntry {
-            binding: 46,
-            resource: wgpu::BindingResource::TextureView(&self.weather.view),
-        });
-        entries.push(wgpu::BindGroupEntry {
-            binding: 50,
-            resource: wgpu::BindingResource::Sampler(&self.cloud_sampler),
-        });
         entries.extend(self.page_bindings.audit_entries());
         entries.sort_by_key(|e| e.binding);
         entries.dedup_by_key(|e| e.binding);
@@ -3621,7 +3668,7 @@ impl Renderer {
         let draws = self.read_buffer(&self.scenery.visible).await?;
         let mut visible = std::collections::HashSet::new();
         // Draw lists per class (scenery.wgsl sc_list_base): tree LOD0-2, rock LOD0-1, impostor cards.
-        let bases = [0usize, 1024, 5120, 21504, 25600, 41984];
+        let bases = [0usize, 1024, 5120, 21504, 25600, 41984, 74752];
         for (k, base) in bases.iter().enumerate() {
             let count = result["class_draws"][k].as_u64().unwrap_or(0) as usize;
             for i in 0..count {

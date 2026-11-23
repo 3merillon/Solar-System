@@ -93,7 +93,7 @@ changed startup in three ways.
   7.7 s with the water program alone on the critical path.
 - Deferred features. `web/gpu-startup.js` lists the programs only the ocean
   (`water`, `ocean_vertex`, `ocean_cap_vertex`), the clouds (`cloud_pass`,
-  `cloud_far_pass`, `cloud_local_generate`, both sun cloud profile generators),
+  `cloud_far_pass`, both sun cloud profile generators),
   the scenery (`scenery_cull`, `scenery_shade`), the shadows (`shade`) and
   diagnostics need. The bridge resolves once every other program exists; the
   renderer starts with those features absent (`renderer::Pipelines` keeps

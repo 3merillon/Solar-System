@@ -3,6 +3,7 @@ pub mod animation;
 pub mod audit;
 #[cfg(target_arch = "wasm32")]
 pub mod browser;
+mod clouds;
 pub mod data_lag;
 pub mod finish;
 #[path = "../../solar-probe/src/gpu.rs"]

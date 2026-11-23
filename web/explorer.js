@@ -81,7 +81,7 @@ updateSpeed();
 if(matchMedia('(pointer: coarse)').matches)enableTouch();window.addEventListener('touchstart',()=>enableTouch(),{once:true,passive:true});
 window.addEventListener('keydown',e=>{if(!forGame(e))return;if(e.code==='KeyH'&&!e.repeat){e.preventDefault();setUiCollapsed(!document.body.classList.contains('hidden-ui'));return;}if(!ready)return;keys.add(e.code);if(['KeyW','KeyA','KeyS','KeyD','KeyQ','KeyE','KeyC','Space','PageUp','PageDown'].includes(e.code))e.preventDefault();});window.addEventListener('keyup',e=>keys.delete(e.code));window.addEventListener('blur',()=>{keys.clear();look=false;});
 $('destination').onchange=()=>go($('destination').value);$('speed').oninput=updateSpeed;
-for(const id of ['water','atmosphere','clouds','caustics'])$(id).onchange=()=>configure({[id]:$(id).checked}).catch(fail);$('history').onchange=()=>configure({cloud_history:$('history').checked}).catch(fail);for(const id of ['seed','body','debug'])$(id).onchange=()=>configure({[id]:Number($(id).value)}).catch(fail);$('sun').oninput=()=>configure({sun:[-.45,Number($('sun').value),.38]}).catch(fail);
+for(const id of ['water','atmosphere','clouds','caustics'])$(id).onchange=()=>configure({[id]:$(id).checked}).catch(fail);$('taa').onchange=()=>configure({taa:$('taa').checked}).catch(fail);$('history').onchange=()=>configure({cloud_history:$('history').checked}).catch(fail);for(const id of ['seed','body','debug'])$(id).onchange=()=>configure({[id]:Number($(id).value)}).catch(fail);$('sun').oninput=()=>configure({sun:[-.45,Number($('sun').value),.38]}).catch(fail);
 function syncSceneryUi(s){for(const id of ['trees','rocks','buildings','ground_cover'])$(id).checked=s[id];$('cover-reach').value=s.cover_reach;$('cover-reach-value').textContent=Math.round(s.cover_reach)+' m';for(const [id,key] of [['scenery-density','scenery_density'],['scenery-detail','scenery_detail'],['scenery-wind','scenery_wind']]){$(id).value=s[key];$(id+'-value').textContent=Number(s[key]).toFixed(1)+'x';}}
 for(const id of ['trees','rocks','buildings','ground_cover'])$(id).onchange=()=>configure({[id]:$(id).checked}).catch(fail);
 $('cover-reach').oninput=()=>configure({cover_reach:Number($('cover-reach').value)}).catch(fail);
@@ -90,7 +90,7 @@ function syncTerrainUi(s){$('lod-distance').value=s.lod_distance;$('lod-distance
 $('surface-detail').onchange=()=>configure({surface_detail:$('surface-detail').checked}).catch(fail);
 $('ground-detail').onchange=()=>configure({ground_detail:$('ground-detail').checked}).catch(fail);
 $('lod-distance').oninput=()=>configure({lod_distance:Number($('lod-distance').value)}).catch(fail);
-function syncWaterUi(s){$('sea').value=s.sea;$('sea-slider').value=s.sea;for(const [id,key,unit] of [['wave-height','wave_height','m'],['wave-speed','wave_speed','x'],['water-clarity','water_clarity','x'],['foam','foam','x']]){$(id).value=s[key];$(id+'-value').textContent=Number(s[key]).toFixed(1)+(unit==='m'?' m':'x');}for(const id of ['water','caustics','atmosphere','clouds'])$(id).checked=s[id];$('history').checked=s.cloud_history;}
+function syncWaterUi(s){$('sea').value=s.sea;$('sea-slider').value=s.sea;for(const [id,key,unit] of [['wave-height','wave_height','m'],['wave-speed','wave_speed','x'],['water-clarity','water_clarity','x'],['foam','foam','x']]){$(id).value=s[key];$(id+'-value').textContent=Number(s[key]).toFixed(1)+(unit==='m'?' m':'x');}for(const id of ['water','caustics','atmosphere','clouds'])$(id).checked=s[id];$('history').checked=s.cloud_history;$('taa').checked=s.taa;}
 async function seaLevel(value){try{const s=await configure({sea:value});syncWaterUi(s);}catch(e){syncWaterUi(JSON.parse(engine.settings()));fail(e);}}
 $('sea').onchange=()=>seaLevel(Number($('sea').value));$('sea-slider').oninput=()=>seaLevel(Number($('sea-slider').value));
 $('sea-here').onclick=()=>seaLevel(Math.max(-10000,Math.min(10000,Math.round((len(camera[0])-engine.radius()-1.8)*10)/10)));
@@ -129,25 +129,23 @@ for(const [id,key] of [['shadows','shadows'],['water-reflections','water_reflect
 for(const [id,key] of [['shadow-steps','shadow_steps'],['shadow-cascades','shadow_cascades'],['atmosphere-steps','atmosphere_steps'],['water-bands','water_bands'],['relief-steps','relief_steps']])$(id).oninput=()=>configure({[key]:Number($(id).value)}).catch(fail);
 $('profile-quality').oninput=()=>configure({profile_quality:Number($('profile-quality').value)}).catch(fail);
 for(const id of ['cloud-wind','cloud-direction'])$(id).oninput=()=>{const angle=Number($('cloud-direction').value)*Math.PI/180,speed=Number($('cloud-wind').value);configure({wind:[speed*Math.cos(angle),speed*Math.sin(angle)]}).catch(fail);};
-// The window bars round the world image follow its aspect (explorer.css #world).
-function worldAspect(w,h){if(!(w>0&&h>0))return;world.width=w;world.height=h;showAspect();}
-// Whole pixels make the image's shape differ from the window's by a fraction of a percent: it is then shown over the
-// whole window, not with bars two pixels wide.
-function showAspect(){const a=world.width/world.height,w=innerWidth/innerHeight;$('world')?.style.setProperty('--world-aspect',String(Math.abs(a/w-1)<0.005?w:a));}
-// The image takes the window's shape again once a resize or a turn of the device has settled. Until the renderer has
-// its new targets the old image stays, with bars. A test page keeps its fixed size.
+// Track the projection used by the worker for labels and the next flight packet.
+function worldAspect(w,h){world.width=w;world.height=h;}
+function viewportSize(){return canvasSize(device,params.has('test'),canvas.clientWidth,canvas.clientHeight);}
 let fitTimer=0,fitting=false;
 async function fitWorld(){
  if(!ready||fitting||!device||params.has('test'))return;
- const [w,h]=canvasSize(device);if(w===world.width&&h===world.height)return;
+ const [w,h]=viewportSize();if(w===world.width&&h===world.height)return;
  fitting=true;try{await engine.resize(w,h);worldAspect(w,h);}catch(error){console.warn('The image keeps its size:',error);}finally{fitting=false;}
- const [nw,nh]=canvasSize(device);if(nw!==world.width||nh!==world.height){clearTimeout(fitTimer);fitTimer=setTimeout(fitWorld,200);}
+ const [nw,nh]=viewportSize();if(nw!==world.width||nh!==world.height){clearTimeout(fitTimer);fitTimer=setTimeout(fitWorld,200);}
 }
-addEventListener('resize',()=>{showAspect();clearTimeout(fitTimer);fitTimer=setTimeout(fitWorld,200);});
+function scheduleFit(){clearTimeout(fitTimer);fitTimer=setTimeout(fitWorld,150);}
+new ResizeObserver(scheduleFit).observe(canvas);
+addEventListener('resize',scheduleFit);
 async function start(){
  $('explorer-controls').inert=true;startupFailed=false;startupStarted=performance.now();startupPanel.hidden=false;$('startup-retry').hidden=true;$('error').hidden=true;window.explorerFailure=null;window.explorerReady=false;
  try{
-  device=await detectDevice();const [cw,ch]=canvasSize(device,params.has('test'));if(canvas.width!==cw||canvas.height!==ch){canvas.width=cw;canvas.height=ch;}worldAspect(cw,ch);
+  device=await detectDevice();const [cw,ch]=viewportSize();if(canvas.width!==cw||canvas.height!==ch){canvas.width=cw;canvas.height=ch;}worldAspect(cw,ch);
   if(device.mobile){enableTouch();let saved=null;try{saved=localStorage.getItem('solar.skin.ui-collapsed');}catch{}if(saved===null)setUiCollapsed(true);}
   const tier=params.get('tier')||allocationTier(device);
   startupProgress({stage:'Starting render worker',detail:`${device.reason} · ${cw}x${ch} canvas · ${tier} allocation tier`});
@@ -164,7 +162,7 @@ async function start(){
   engine=await createWorkerExplorer(canvas,startupProgress,rendererFailed,tier,body,field,solarMode);
   let saved=null;try{saved=localStorage.getItem('solar.skin.quality');}catch{}
   const preset=params.get('quality')||(params.has('test')?'ultra':startingPreset(device,saved));
-  if(PRESETS[preset])await configure({...PRESETS[preset]});
+  if(PRESETS[preset])await configure({...PRESETS[preset],...(params.has('test')?{taa:params.get('taa')==='1'}:{})});
   if(unlimited)await configure({fetch_limits:false});
   // The solar page's navigation (#solar-hud) goes in the panel under the soundtrack and its time line into the dock; it lists its own keys.
   if(solarMode){solar=await startSolar({engine,params,canvas,$});setCamera(solar.frame(0,keys,speed));layout();}else{for(const e of document.querySelectorAll('.local-only'))e.hidden=false;go(params.get('view')||(body==='earth'?'earth-orbit':'orbit'));const k=document.querySelector('#flight-hud .hud-key');k.textContent='Travel speed';k.parentElement.title='Travel speed. The wheel changes it too.';}const settings=JSON.parse(engine.settings());syncCloudUi(settings);syncTerrainUi(settings);syncSceneryUi(settings);syncQualityUi(settings);
@@ -175,7 +173,7 @@ async function start(){
   step(0);await engine.flush();if(startupFailed)return;
   // First image: terrain, sky and shadows. The ocean, clouds and prop shading
   // follow as their programs finish compiling (see web/gpu-startup.js).
-  ready=true;paused=params.has('test');last=performance.now();$('explorer-controls').inert=false;startupPanel.hidden=true;window.solarFirstImage=performance.now()-startupStarted;
+  ready=true;scheduleFit();paused=params.has('test');last=performance.now();$('explorer-controls').inert=false;startupPanel.hidden=true;window.solarFirstImage=performance.now()-startupStarted;
   await settle();
  }catch(e){rendererFailed(e);}
 }
