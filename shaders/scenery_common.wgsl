@@ -125,10 +125,21 @@ fn sc_eco(hi:vec3<f32>,lo:vec3<f32>,height:f32,slope:f32)->ScEco{
   // The water layer first: distance to the nearest water edge (negative in water), and whether that water is still or
   // slow. Ground cover reads it even where imagery has not arrived.
   let pos=page_pos(hi,lo);e.green=0.35;
-  let entry=measured_water_entry(pos,2.0);if entry!=0u{let we=water_layer_entry(entry,pos.face,pos.g);if we!=0u{let w=water_layer_at(we,pos);e.water=w.sdf;e.still=select(0.0,1.0,w.kind==2u||(w.kind==3u&&length(w.flow)<0.35));if w.level>WATER_NONE&&height<w.level+0.6{e.water=min(e.water,0.0);}}}
+  let entry=measured_water_entry(pos,1.0);let we=water_layer_entry(entry,pos.face,pos.g);
+  if we!=0u{
+   let w=water_layer_at(we,pos);e.water=w.sdf;
+   e.still=select(0.0,1.0,w.kind==2u||(w.kind==3u&&length(w.flow)<0.35));
+  }
   if page_entry_level(page_entry(1u,pos.face,min(10u,u32(f.field.z)),pos.g))<9u||page_entry_level(page_entry(0u,pos.face,min(11u,u32(f.field.y)),pos.g))<min(11u,u32(f.field.y)){return e;}
-  if height<measured_water_level(pos,1.0)+1.0{e.water=min(e.water,0.0);return e;}
-  let dry=smoothstep(0.0005,0.003,length(measured_footprint(pos,48.0).gradient));
+  var dry=1.0;
+  if we!=0u{
+   // The signed shoreline distinguishes flat land from a lake, including
+   // low banks beside a water plane extending beyond its mapped shoreline.
+   if e.water<=0.0{return e;}
+  }else{
+   if height<measured_water_level(pos,1.0)+1.0{e.water=min(e.water,0.0);return e;}
+   dry=smoothstep(0.0005,0.003,length(measured_footprint(pos,48.0).gradient));
+  }
   let c=measured_albedo_at(pos,48.0);let sum=max(0.001,c.r+c.g+c.b);let luma=sum/3.0;
   let hue=smoothstep(0.35,0.40,c.g/sum)*smoothstep(1.05,1.25,c.g/max(c.b,0.001));
   let green=hue*(1.0-smoothstep(0.05,0.12,luma));
@@ -137,7 +148,7 @@ fn sc_eco(hi:vec3<f32>,lo:vec3<f32>,height:f32,slope:f32)->ScEco{
   e.green=hue*(1.0-smoothstep(0.2,0.35,luma));
   // Darker, bluer canopies in imagery are more often needle-leaved.
   e.conifer=(1.0-smoothstep(0.025,0.06,luma))*0.7;
-  let altitude=smoothstep(f.planet.y+3.0,f.planet.y+20.0,height)*smoothstep(-2.0,1.5,e.temp);
+  let altitude=select(smoothstep(f.planet.y+3.0,f.planet.y+20.0,height),1.0,we!=0u)*smoothstep(-2.0,1.5,e.temp);
   e.trees=dry*green*altitude*smoothstep(0.68,0.88,slope)*smoothstep(2.0,5.0,e.water);
   e.rocks=dry*0.15*bare*rocks*smoothstep(0.0,1.0,e.water);
   return e;
@@ -309,6 +320,8 @@ fn sc_projected_cover(p:vec3<f32>,height:f32,slope:f32,footprint:f32,rd:vec3<f32
    let object=sc_objects[sc_cell_slot(face,c)];
    let valid=all(object.key.xyz==vec3<u32>(face,vec2<u32>(c)))&&sc_record_current(object.key.w)&&object.identity.w==bitcast<u32>(f.geo.z);
    if valid {
+    // The urban/water mask also retires the distant projected footprint.
+    if object.contact.w<0.0||object.shape.w<0.0{continue;}
     kind=u32(object.hi.w);let variant=u32(object.shape.z);let tv=SC_SPECIES*max(1u,min(3u,f.tier_d.y));
     radius=select(object.shape.x,sc_crown_metres(min(variant/max(1u,min(3u,f.tier_d.y)),SC_SPECIES-1u),object.shape.x),kind==1u&&variant<tv);
     let displacement=(object.hi.xyz-f.eye_hi.xyz)+(object.lo.xyz-radial*object.lo.w-base);separation=length(displacement-radial*dot(displacement,radial));

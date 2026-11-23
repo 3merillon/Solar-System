@@ -60,8 +60,9 @@ fn scenery_cover_place(@builtin(global_invocation_id) id:vec3<u32>,@builtin(loca
  let coord=c*unit-vec2<i32>(Q)+jitter;let key=cube_key(face,coord.x,coord.y);
  // Reach and thinning by the distance over the ground (the canonical point lies on the sphere at sea level).
  let base=base_position(key);let rel=relative(base);let n=base.normal.xyz;let flat=rel-n*dot(rel,n);let along=length(flat);
- if urban_blocked(base.hi.xyz,base.lo.xyz,1.3){return;}
  if along>reach{return;}
+ let blocked=urban_blocked(base.hi.xyz,base.lo.xyz,1.3);
+ if blocked&&!known{return;}
  let thin=1.0-0.8*smoothstep(reach*0.45,reach,along);
  let density=smoothstep(sc_random(seed+2u)-.08,sc_random(seed+2u)+.08,thin*f.cover.z);
  if density<=0.&&!known{return;}
@@ -101,6 +102,7 @@ fn scenery_cover_place(@builtin(global_invocation_id) id:vec3<u32>,@builtin(loca
  var habitat=1.0;
  if field_measured()&&k!=3u{let green=cv_green(base);habitat=select(green,select(0.0,f32((identity.x>>23u)&255u)/255.0,known),green<0.0);if known&&cv_image_level<((identity.y>>23u)&31u){habitat=f32((identity.x>>23u)&255u)/255.0;}}
  if k!=2u&&(e.water<0.3||depth>-0.12){atomicAdd(&sc_state.cover_water_rejected,1u);habitat=0.0;}
+ if blocked{habitat=0.0;}
  let old_alpha=select(0.0,f32((identity.x>>23u)&255u)/255.0,known);
  let alpha=select(habitat,old_alpha+clamp(habitat-old_alpha,-max(0.,f.forward.w)/.35,max(0.,f.forward.w)/.35),known);
  let up=normalize(base.hi.xyz+base.lo.xyz);
@@ -129,22 +131,27 @@ fn scenery_cover_place(@builtin(global_invocation_id) id:vec3<u32>,@builtin(loca
  let lod=select(target_lod,sc_fade_toward(old_lod,target_lod,0.22),known);
  let lists=cv_lists(k,lod);let packed=pack2x16float(vec2<f32>(yaw,size));
  let kind=k|(variant<<8u)|(u32(clamp(e.moist,0.0,1.0)*255.0)<<16u)|(u32(clamp(1.0-e.water/8.0,0.0,1.0)*255.0)<<24u);
- let stamp=select((frame-1u)&65535u,frame,appearance>0.0);
+ // Under pressure keep the nearest bands first, with stable ordering within
+ // a band and modest hysteresis for clumps actually emitted last frame.
+ let incumbent=known&&(identity.w&65535u)==((frame-1u)&65535u)&&(identity.w&0x1000000u)!=0u;
+ let band=u32(clamp(along/max(reach,1.0)*select(1.0,.8,incumbent)*16.0,0.0,15.0));
+ let bucket=band*16u+(hash(seed+753u)&15u);
+ let stamp=select((frame-1u)&65535u,frame,appearance>0.0)|(bucket<<16u);
  cover_history[slot]=CoverHistory(vec4<u32>(u32(c.x)|(u32(round(clamp(alpha,0.,1.)*255.0))<<23u),u32(c.y)|(max(cv_image_level,select(0u,(identity.y>>23u)&31u,known))<<23u)|0x80000000u,bitcast<u32>(f.geo.z),stamp),
   CoverInstance(vec4<f32>(support.xyz-rel,f32(u32(round(lod*4095.))+4096u*u32(round(appearance*4095.)))),pack2x16unorm(sc_oct_encode(surface_up)),packed,seed,kind));
  if appearance<=0.0{return;}
- for(var t=0u;t<2u;t++){let list=lists[t];if list==99u{continue;}atomicAdd(&cover_admission[list*CV_BUCKETS+(hash(seed+753u)&255u)],1u);}
+ for(var t=0u;t<2u;t++){let list=lists[t];if list==99u{continue;}atomicAdd(&cover_admission[list*CV_BUCKETS+bucket],1u);}
 }
 // Admit complete stable hash buckets before appending. The admitted sum is <=
 // capacity by construction, so thread arrival order can never choose survivors.
-// Leave 15% headroom when pressured, avoiding repeated admission/eviction at capacity.
+// Use headroom for new admissions. If a list fills, keep every old bucket that still fits.
 @compute @workgroup_size(1) fn scenery_cover_select(){
  for(var k=0u;k<6u;k++){
   var total=0u;var fit=0u;var grow=0u;var accepted=0u;let cap=cv_cap(k);
   let previous=atomicLoad(&cover_admission[CV_COUNTS+k]);
   for(var b=0u;b<CV_BUCKETS;b++){total+=atomicLoad(&cover_admission[k*CV_BUCKETS+b]);if total<=cap{fit=b+1u;}if total<=cap*85u/100u{grow=b+1u;}}
   var limit=previous;
-  if previous==0u{limit=select(grow,CV_BUCKETS,total<=cap);}else if previous>fit{limit=grow;}else if grow>previous{limit=grow;}
+  if previous==0u{limit=select(grow,CV_BUCKETS,total<=cap);}else if previous>fit{limit=fit;}else if grow>previous{limit=grow;}
   atomicStore(&cover_admission[CV_COUNTS+k],limit);
   for(var b=0u;b<limit;b++){accepted+=atomicLoad(&cover_admission[k*CV_BUCKETS+b]);}
   atomicAdd(&sc_state.cover_overflow,total-accepted);
@@ -153,18 +160,18 @@ fn scenery_cover_place(@builtin(global_invocation_id) id:vec3<u32>,@builtin(loca
 @compute @workgroup_size(64) fn scenery_cover_emit(@builtin(global_invocation_id) id:vec3<u32>){
  let slot=id.x;if slot>=6u*CV_WINDOW*CV_WINDOW||f.cover.x<.5{return;}
  let face=slot/(CV_WINDOW*CV_WINDOW);let eye=f.eye_hi.xyz+f.eye_lo.xyz;let chart=sc_face_project(face,eye);if chart.z<length(eye)*.45{return;}
- let h=cover_history[slot];if (h.identity.y&0x80000000u)==0u||h.identity.w!=(terrain.frame_count&65535u){return;}
+ let h=cover_history[slot];if (h.identity.y&0x80000000u)==0u||(h.identity.w&65535u)!=(terrain.frame_count&65535u){return;}
  let sub=cv_sub();let half=min(i32(ceil(cv_reach()/cv_metres()))+1,i32(CV_WINDOW/2u));let center=vec2<i32>(floor((chart.xy/chart.z*.5+.5)*524288.0*f32(sub)));
  let c=vec2<i32>(h.identity.xy&vec2<u32>(CV_COORD));if any(c<center-vec2<i32>(half))||any(c>=center+vec2<i32>(half))||h.identity.z!=bitcast<u32>(f.geo.z){return;}
  let inst=h.instance;let seed=inst.seed;let unit=1024/sub;let jitter=vec2<i32>(i32(hash(seed)%u32(unit)),i32(hash(seed+1u)%u32(unit)))&vec2<i32>(-2);
  let coord=c*unit-vec2<i32>(Q)+jitter;let base=base_position(cube_key(face,coord.x,coord.y));
- let p=relative(base)+inst.p.xyz;let lod=f32(u32(inst.p.w)&4095u)/4095.;let lists=cv_lists(inst.kind&255u,lod);let bucket=hash(seed+753u)&255u;var emitted=false;
+ let p=relative(base)+inst.p.xyz;let lod=f32(u32(inst.p.w)&4095u)/4095.;let lists=cv_lists(inst.kind&255u,lod);let bucket=(h.identity.w>>16u)&255u;var emitted=false;
  for(var t=0u;t<2u;t++){let list=lists[t];if list==99u||bucket>=atomicLoad(&cover_admission[CV_COUNTS+list]){continue;}
   let i=atomicAdd(&sc_state.class_count[6u+list],1u);
   if i>=cv_cap(list){atomicAdd(&sc_state.cover_overflow,1u);continue;}
   cover_write[cv_base(list)+i]=CoverInstance(vec4<f32>(p,inst.p.w),inst.up,inst.yaw_scale,seed,(inst.kind&0xffffff00u)|list);emitted=true;
  }
- if emitted{atomicAdd(&sc_state.cover_count,1u);}
+ if emitted{cover_history[slot].identity.w|=0x1000000u;atomicAdd(&sc_state.cover_count,1u);}
 }
 @compute @workgroup_size(1)
 fn scenery_cover_draws(){

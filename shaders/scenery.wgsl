@@ -29,6 +29,7 @@ struct ScState {
  bounds:array<atomic<u32>,72>,
  class_count:array<atomic<u32>,16>,
  bottom:array<atomic<u32>,1536>,
+ candidates:atomic<u32>,cutoff:array<u32,7>,emitted:array<atomic<u32>,7>,refresh_bands:array<atomic<u32>,3>,
 }
 struct ScRead {
  revision:u32,seed:u32,sea:u32,job:u32,
@@ -160,6 +161,9 @@ fn scenery_begin(){
  if kind==3u{let s=f.tier_d.z;sc_state.dispatch[12]=(s+7u)/8u;sc_state.dispatch[13]=(s+7u)/8u;}
  atomicStore(&sc_state.requests,0u);atomicStore(&sc_state.generated,0u);atomicStore(&sc_state.resident,0u);atomicStore(&sc_state.trees,0u);atomicStore(&sc_state.rocks,0u);atomicStore(&sc_state.deferred,0u);atomicStore(&sc_state.overflow,0u);atomicStore(&sc_state.support_error,0u);atomicStore(&sc_state.max_contact,0u);atomicStore(&sc_state.footprint_rejected,0u);
  atomicStore(&sc_state.support_reused,0u);atomicStore(&sc_state.support_refreshed,0u);atomicStore(&sc_state.refresh_count,0u);
+ atomicStore(&sc_state.candidates,0u);
+ for(var k=0u;k<7u;k++){atomicStore(&sc_state.emitted[k],0u);}
+ for(var k=0u;k<3u;k++){atomicStore(&sc_state.refresh_bands[k],0u);}
  for(var v=0u;v<72u;v++){atomicStore(&sc_state.wanted[v],0u);}
  for(var k=0u;k<16u;k++){atomicStore(&sc_state.class_count[k],0u);}
  // Mesh classes: indexed draws over each class's template; instance counts filled by culling.
@@ -204,7 +208,18 @@ fn sc_place_token(canonical:vec3<i32>)->u32{
  for(var j=0u;j<5u;j++){
   var at=chart.yz;if j<4u{at+=vec2<i32>(select(-reach,reach,(j&1u)!=0u),select(-reach,reach,(j&2u)!=0u));}
   let c=face_chart(cube_key(u32(chart.x),at.x,at.y));
-  t=hash(t^(page_entry(0u,u32(c.x),u32(f.field.y),vec2<u32>(c.yz+vec2<i32>(Q))/2u)>>12u));
+  let g=vec2<u32>(c.yz+vec2<i32>(Q))/2u;let entry=page_entry(0u,u32(c.x),u32(f.field.y),g);
+  t=hash(t^(entry>>12u));
+  // A repaired shoreline can replace the same height level and atlas slot.
+  // Include its publication stamp so previously empty cells are reconsidered.
+  if j==4u&&f.solar.w<.5{
+   let we=water_layer_entry(entry,u32(c.x),g);
+   if we!=0u{
+    let slot=page_entry_slot(we);
+    let stamp=textureLoad(page_meta,vec2<i32>(i32(slot%256u),PAGE_HEIGHT_ARRIVAL_ROW+i32(slot/256u)),0).x;
+    t=hash(t^we^bitcast<u32>(stamp));
+   }
+  }
  }
  return t&0xffffu;
 }
@@ -292,7 +307,12 @@ fn sc_place(slot:u32,priority:u32){
   else{let at=sc_place_coord(c,sc_cell_hash(face,u32(c.x),u32(c.y)));key.w=(key.w&~65535u)|sc_place_token(cube_key(face,at.x,at.y));}
  }
  if all(sc_instances[slot].key==key)&&sc_instances[slot].identity.w==bitcast<u32>(f.geo.z){return;}
- let old=sc_instances[slot];if sc_record_current(old.key.w)&&(old.key.w==key.w||any(old.key.xyz!=key.xyz))&&old.identity.w==bitcast<u32>(f.geo.z)&&sc_window_weight(old.key.xyz)>0.0{return;}
+ let old=sc_instances[slot];
+ if sc_record_current(old.key.w)&&old.identity.w==bitcast<u32>(f.geo.z)&&any(old.key.xyz!=key.xyz){
+  // Allow the last visible occupant to finish its exit fade before aliasing
+  // this toroidal slot to a newly streamed cell on the opposite edge.
+  if sc_window_weight(old.key.xyz)>0.0||(old.contact.w>0.0005&&sc_was_drawn(slot)){return;}
+ }
  let ticket=atomicAdd(&sc_state.requests,1u);if ticket>=u32(f.scenery_work.x){atomicAdd(&sc_state.deferred,1u);return;}
  let seed=sc_cell_hash(face,u32(c.x),u32(c.y));let coord=sc_place_coord(c,seed);let canonical=cube_key(face,coord.x,coord.y);
  let s=radial_sample(canonical,24u);let base=base_position(canonical);let slope=dot(s.normal.xyz,base.normal.xyz);let e=sc_eco(base.hi.xyz,base.lo.xyz,s.lo.w,slope);
@@ -307,15 +327,20 @@ fn sc_place(slot:u32,priority:u32){
  // choice or temporarily leave it without imagery. A published object owns
  // its species and dimensions while resident. Still respect mapped water.
  let resident=field_measured()&&sc_record_current(old.key.w)&&all(old.key.xyz==key.xyz)&&old.identity.w==bitcast<u32>(f.geo.z)&&old.contact.w>0.0005;
- var retain=resident;
- if retain&&f.solar.w<.5&&e.water<=0.0{
+ var submerged=false;
+ if resident&&f.solar.w<.5&&e.water<=0.0{
   let pos=page_pos(base.hi.xyz,base.lo.xyz);
-  if measured_water_entry(pos,1.0)!=0u&&s.lo.w<measured_water_level(pos,1.0)+1.0{retain=false;choice.kind=0u;}
+  let entry=measured_water_entry(pos,1.0);
+  let water=water_layer_entry(entry,pos.face,pos.g);
+  // A missing detailed tile may temporarily inherit a lake covering the
+  // whole valley. Only local water data can retire an already visible prop.
+  let shoreline=select(entry,water,water!=0u);
+  submerged=(shoreline&(1u<<30u))==0u&&page_entry_level(shoreline)>=min(11u,u32(f.field.y))&&s.lo.w<measured_water_level(pos,1.0)+1.0;
  }
- if retain{choice=ScChoice(u32(old.hi.w),u32(old.shape.z),old.shape.x);}
+ if resident{choice=ScChoice(u32(old.hi.w),u32(old.shape.z),old.shape.x);}
  if choice.kind==1u&&f.scenery.x<0.5{choice.kind=0u;}if choice.kind==2u&&f.scenery.y<0.5{choice.kind=0u;}
  // A rock on ground too steep for it is decided here, from the field alone, over its whole footprint.
- if field_measured()&&choice.kind==2u&&!retain{
+ if field_measured()&&choice.kind==2u&&!resident{
   let ch=face_chart(canonical);let step=max(1,i32(choice.size*1.2/f.planet.x*f32(Q)));var spread=0.0;
   for(var j=0u;j<8u;j++){let a=f32(j)*0.785398;let d=vec2<i32>(vec2<f32>(cos(a),sin(a))*f32(step));spread=max(spread,abs(radial_sample(cube_key(u32(ch.x),ch.y+d.x,ch.z+d.y),24u).lo.w-s.lo.w));}
   if spread>choice.size*1.6{choice.kind=0u;}
@@ -324,7 +349,9 @@ fn sc_place(slot:u32,priority:u32){
  let again=field_measured()&&sc_record_current(old.key.w)&&all(old.key.xyz==key.xyz)&&old.identity.w==bitcast<u32>(f.geo.z)&&u32(old.hi.w)==choice.kind&&u32(old.shape.z)==choice.variant;
  // shape.w packs a random byte (wind phase, tint), moisture and nearness to water for the materials.
  let packed=f32((hash(seed+6u)&255u)|(u32(clamp(e.moist,0.0,1.0)*255.0)<<8u)|(u32(clamp(1.0-e.water/12.0,0.0,1.0)*255.0)<<16u));
- sc_instances[slot]=ScInstance(key,s.hi,s.lo,vec4<f32>(choice.size,yaw,f32(choice.variant),packed),select(vec4<f32>(0),old.support,again),vec4<u32>(bitcast<u32>(canonical.x),bitcast<u32>(canonical.y),bitcast<u32>(canonical.z),bitcast<u32>(f.geo.z)),select(vec4<f32>(0),old.contact,again));
+ // A signed packed value marks an existing prop retiring into confirmed water.
+ let material=select(packed,-1.0-packed,submerged);
+ sc_instances[slot]=ScInstance(key,s.hi,s.lo,vec4<f32>(choice.size,yaw,f32(choice.variant),material),select(vec4<f32>(0),old.support,again),vec4<u32>(bitcast<u32>(canonical.x),bitcast<u32>(canonical.y),bitcast<u32>(canonical.z),bitcast<u32>(f.geo.z)),select(vec4<f32>(0),old.contact,again));
  // A sharper height page changes the canonical root before the displayed
  // terrain has finished morphing. Preserve the old world-space support until
  // the bounded refresh pass visits this record. Its offset was relative to
@@ -362,7 +389,7 @@ fn sc_model(s:ScInstance)->mat3x3<f32>{
  let tilt=mat3x3<f32>(vec3<f32>(cos(ta),sin(ta),0.0),vec3<f32>(-sin(ta)*cos(tb),cos(ta)*cos(tb),sin(tb)),vec3<f32>(sin(ta)*sin(tb),-cos(ta)*sin(tb),cos(tb)));
  return b*tilt*mat3x3<f32>(vec3<f32>(st.x,0,0),vec3<f32>(0,st.y,0),vec3<f32>(0,0,st.z));
 }
-fn sc_eco_byte(s:ScInstance,k:u32)->f32{return f32((u32(s.shape.w)>>(8u*k))&255u)/255.0;}
+fn sc_eco_byte(s:ScInstance,k:u32)->f32{return f32((u32(select(s.shape.w,-1.0-s.shape.w,s.shape.w<0.0))>>(8u*k))&255u)/255.0;}
 // Support over a footprint: the displayed surface at grid cells under the object, compared with the object's own lowest
 // point over each cell (rocks: the generated bottom map; trees: a ring at the trunk), so that no part of the base floats.
 // Returns the radial offset of the model origin from the centre support, the deepest burial and whether all samples resolved.
@@ -428,11 +455,18 @@ fn sc_object_lod(s:ScInstance,distance:f32,captured:bool)->f32{
  switch f.scenery_limits.z{case 1u:{lod=0.0;}case 2u:{lod=top;}case 3u:{lod=1.0;}case 4u:{lod=select(1.0,2.0,tree);}default:{}}
  if !captured{lod=min(lod,top-1.0);}return lod;
 }
-fn sc_append(k:u32,slot:u32){let i=atomicAdd(&sc_state.class_count[k],1u);if i<min(sc_list_cap(k),f.scenery_limits.x){sc_visible[sc_list_base(k)+i]=slot;}else{atomicAdd(&sc_state.overflow,1u);}}
 // Culling in three passes, so that the heavy support code (displayed surface, footprint) never weighs on the scan over every
 // record: classify (which records need support measured again), refresh (only those, at most SC_REFRESH_CAP a frame), then
 // the light pass that fades, chooses the level of detail and fills the draw lists.
-@group(0) @binding(154) var<storage,read_write> sc_refresh:array<u32>;
+// Two one-bit visibility histories. Refresh and draw selection use the same
+// scratch queue in successive dispatches. 27648 words cover the largest tier.
+const SC_HISTORY_WORDS:u32=27648u;
+struct ScWork {history:array<atomic<u32>,55296>,queue:array<u32>}
+@group(0) @binding(154) var<storage,read_write> sc_work:ScWork;
+fn sc_was_drawn(slot:u32)->bool{
+ let word=((f.cloud_cache.x&1u)^1u)*SC_HISTORY_WORDS+slot/32u;
+ return (atomicLoad(&sc_work.history[word])&(1u<<(slot&31u)))!=0u;
+}
 const SC_REFRESH_CAP:u32=65536u;
 struct ScCulled {valid:bool,s:ScInstance,root:vec3<f32>,distance:f32,variant:u32,kind:u32}
 fn sc_cull_record(slot:u32)->ScCulled{
@@ -445,22 +479,42 @@ fn sc_cull_record(slot:u32)->ScCulled{
  return ScCulled(true,s,root,length(root),variant,kind);
 }
 fn sc_reusable(slot:u32,s:ScInstance)->bool{let serial=sc_support_cache.stamp_key.x;return s.contact.w>0.0&&serial!=0u&&serial!=0xffffffffu&&sc_support_cache.stamps[slot]==serial;}
+fn sc_blocked(s:ScInstance)->bool{
+ let margin=select(min(12.0,s.shape.x*1.5),min(12.0,s.shape.x*.15+1.0),u32(s.hi.w)==1u);
+ return s.shape.w<0.0||urban_blocked(s.hi.xyz,s.lo.xyz,margin);
+}
 @compute @workgroup_size(64)
 fn scenery_classify(@builtin(global_invocation_id) id:vec3<u32>){
  if id.x>=sc_cap(){return;}
  // Rotate admission when support work exceeds its fixed budget. Dense lunar
  // rock fields must not permanently starve the same tail of the instance table.
  let slot=(id.x+(terrain.frame_count%64u)*SC_REFRESH_CAP)%sc_cap();let c=sc_cull_record(slot);if !c.valid{return;}
- // Retire the contact as well as the draw: shadow casters share this record.
- if urban_blocked(c.s.hi.xyz,c.s.lo.xyz,select(min(12.0,c.s.shape.x*1.5),min(12.0,c.s.shape.x*.15+1.0),c.kind==1u)){sc_instances[slot].contact.w=0.0;return;}
+ // Unpublished objects wait outside conflicts. Published objects keep
+ // contact and their caster while the draw pass fades an actual overlap.
+ if c.s.contact.w<=0.0005{
+  if sc_blocked(c.s){sc_instances[slot].contact.w=-1.0;return;}
+  if c.s.contact.w<0.0{sc_instances[slot].contact.w=0.0;}
+ }
  if sc_prop_pixels(c.s,c.distance)<0.14{if c.s.contact.w>0.0{sc_instances[slot].contact.w=0.0;}return;}
  if sc_state.ready[c.variant]<2u{atomicStore(&sc_state.wanted[c.variant],1u);}
  if sc_state.ready[c.variant]==0u{return;}
- if !sc_reusable(slot,c.s){let i=atomicAdd(&sc_state.refresh_count,1u);if i<SC_REFRESH_CAP{sc_refresh[i]=slot;}else{atomicAdd(&sc_state.deferred,1u);}}
+ if !sc_reusable(slot,c.s){
+  // Schedule close ground first, then drawn or approaching scenery. A
+  // resident awaiting a refresh keeps its last world-space contact.
+  let close=c.distance<max(180.0,18.0*c.s.shape.x);
+  let next=c.distance<max(600.0,64.0*c.s.shape.x)||sc_was_drawn(slot);
+  let band=select(select(2u,1u,next),0u,close);
+  let i=atomicAdd(&sc_state.refresh_bands[band],1u);
+  if i<SC_REFRESH_CAP{sc_work.queue[band*SC_REFRESH_CAP+i]=slot;}
+  if atomicAdd(&sc_state.refresh_count,1u)>=SC_REFRESH_CAP{atomicAdd(&sc_state.deferred,1u);}
+ }
 }
 @compute @workgroup_size(64)
 fn scenery_refresh(@builtin(global_invocation_id) id:vec3<u32>){
- if id.x>=min(atomicLoad(&sc_state.refresh_count),SC_REFRESH_CAP){return;}let slot=sc_refresh[id.x];let c=sc_cull_record(slot);if !c.valid{return;}
+ if id.x>=min(atomicLoad(&sc_state.refresh_count),SC_REFRESH_CAP){return;}
+ var i=id.x;var band=0u;
+ while band<2u{let n=atomicLoad(&sc_state.refresh_bands[band]);if i<n{break;}i-=n;band++;}
+ let slot=sc_work.queue[band*SC_REFRESH_CAP+i];let c=sc_cull_record(slot);if !c.valid{return;}
  let s=c.s;let root=c.root;let distance=c.distance;let variant=c.variant;let tree=c.kind==1u;let up=normalize(s.hi.xyz+s.lo.xyz);let serial=sc_support_cache.stamp_key.x;
  atomicAdd(&sc_state.support_refreshed,1u);sc_support_cache.stamps[slot]=0u;
  var support=sc_support(bitcast<vec3<i32>>(s.identity.xyz));var complete=support.w>=0.0;
@@ -487,7 +541,6 @@ fn scenery_refresh(@builtin(global_invocation_id) id:vec3<u32>){
 fn scenery_cull(@builtin(global_invocation_id) id:vec3<u32>){
  let slot=id.x;let c=sc_cull_record(slot);if !c.valid||sc_state.ready[c.variant]==0u||c.s.contact.w<=0.0{return;}
  var s=c.s;let kind=c.kind;let variant=c.variant;let root=c.root;let distance=c.distance;
- if urban_blocked(s.hi.xyz,s.lo.xyz,select(min(12.0,s.shape.x*1.5),min(12.0,s.shape.x*.15+1.0),kind==1u)){return;}
  atomicAdd(&sc_state.resident,1u);if kind==1u{atomicAdd(&sc_state.trees,1u);}else{atomicAdd(&sc_state.rocks,1u);}
  if sc_reusable(slot,s){atomicAdd(&sc_state.support_reused,1u);}
  let tree=kind==1u;let up=normalize(s.hi.xyz+s.lo.xyz);
@@ -500,7 +553,8 @@ fn scenery_cull(@builtin(global_invocation_id) id:vec3<u32>){
  let in_view=!(z+radius<0.1||abs(dot(center,f.right.xyz))>max(0.0,z)*f.view.z*f.view.w+radius*2.0||abs(dot(center,f.up.xyz))>max(0.0,z)*f.view.w+radius*2.0);
  let seed=sc_cell_hash(s.key.x,s.key.y,s.key.z);
  let weight=sc_window_weight(s.key.xyz)*sc_pixel_weight(2.0*sc_prop_pixels(s,distance));
- let goal=select(0.0005,1.0,sc_admitted(weight+.035*s.contact.w,seed+42839u));
+ let blocked=s.contact.w>0.0005&&sc_blocked(s);
+ let goal=select(0.0005,1.0,!blocked&&sc_admitted(weight+.035*s.contact.w,seed+42839u));
  let appearance=sc_fade_toward(s.contact.w,goal,0.48);
  sc_instances[slot].contact.w=appearance;
  if appearance<=0.0005{return;}
@@ -512,13 +566,70 @@ fn scenery_cull(@builtin(global_invocation_id) id:vec3<u32>){
  let lod=select(sc_fade_toward(current,wanted,0.22),wanted,s.contact.w<=0.0005||f.scenery_limits.z!=0u);
  sc_instances[slot].support.w=lod;
  if !in_view{return;}
- if !tree{sc_append(select(select(3u,4u,lod>=1.0),14u,lod>=2.0),slot);return;}
- let lo=u32(floor(lod));let hi=u32(ceil(lod));
- for(var k=lo;k<=hi;k++){
-  if k>=u32(top){sc_append(5u,slot);}else{sc_append(select(3u+k,k,tree),slot);}
+ var mask=0u;
+ if !tree{mask=1u<<select(select(3u,4u,lod>=1.0),6u,lod>=2.0);}
+ else{
+  for(var k=u32(floor(lod));k<=u32(ceil(lod));k++){mask|=1u<<select(k,5u,k>=u32(top));}
+ }
+ let incumbent=s.contact.w>0.0005&&sc_was_drawn(slot);
+ // A newcomer must be appreciably nearer to displace a drawn peer. Slot
+ // breaks equal-distance ties identically on every GPU dispatch.
+ let range=max(1.0,distance-s.shape.x)*select(1.0,.75,incumbent);
+ let rank=(u32(clamp(log2(1.0+range)*192.0,0.0,4095.0))<<20u)|slot;
+ let i=atomicAdd(&sc_state.candidates,1u);
+ sc_work.queue[2u*i]=rank;sc_work.queue[2u*i+1u]=mask;
+ for(var bits=mask;bits!=0u;bits&=bits-1u){
+  let k=firstTrailingBit(bits);atomicAdd(&sc_state.class_count[select(k,14u,k==6u)],1u);
  }
 }
 fn sc_variant_captured_rw(v:u32)->bool{return sc_state.ready[v]>=2u;}
+// The normal path accepts the entire list. Only an oversubscribed class
+// scans the compact candidates, four radix bytes to find its exact last
+// winner. There is no sorting or CPU readback, even at a draw cap of one.
+var<workgroup> sc_hist:array<atomic<u32>,256>;
+var<workgroup> sc_rank_prefix:u32;
+var<workgroup> sc_rank_left:u32;
+@compute @workgroup_size(64)
+fn scenery_draw_select(@builtin(workgroup_id) group:vec3<u32>,@builtin(local_invocation_index) lane:u32){
+ let k=group.x;let draw=select(k,14u,k==6u);let limit=min(sc_list_cap(draw),f.scenery_limits.x);
+ if lane==0u{
+  let count=atomicLoad(&sc_state.class_count[draw]);
+  sc_state.cutoff[k]=0xffffffffu;sc_rank_prefix=0u;sc_rank_left=0u;
+  if count>limit{atomicAdd(&sc_state.overflow,count-limit);sc_rank_left=limit;}
+ }
+ let slots_needed=workgroupUniformLoad(&sc_rank_left);
+ if slots_needed==0u{return;}
+ let count=atomicLoad(&sc_state.candidates);var prefix_mask=0u;
+ for(var digit=0u;digit<4u;digit++){
+  let shift=24u-digit*8u;
+  for(var b=lane;b<256u;b+=64u){atomicStore(&sc_hist[b],0u);}
+  workgroupBarrier();
+  let prefix=sc_rank_prefix;
+  for(var i=lane;i<count;i+=64u){
+   let rank=sc_work.queue[2u*i];
+   if (rank&prefix_mask)==prefix&&(sc_work.queue[2u*i+1u]&(1u<<k))!=0u{atomicAdd(&sc_hist[(rank>>shift)&255u],1u);}
+  }
+  workgroupBarrier();
+  if lane==0u{
+   for(var b=0u;b<256u;b++){let n=atomicLoad(&sc_hist[b]);if sc_rank_left<=n{sc_rank_prefix|=b<<shift;break;}sc_rank_left-=n;}
+  }
+  workgroupBarrier();prefix_mask|=255u<<shift;
+ }
+ if lane==0u{sc_state.cutoff[k]=sc_rank_prefix;}
+}
+@compute @workgroup_size(64)
+fn scenery_draw_emit(@builtin(global_invocation_id) id:vec3<u32>,@builtin(num_workgroups) groups:vec3<u32>){
+ let count=atomicLoad(&sc_state.candidates);
+ for(var i=id.x;i<count;i+=groups.x*64u){
+  let rank=sc_work.queue[2u*i];let slot=rank&0xfffffu;var drawn=false;
+  for(var bits=sc_work.queue[2u*i+1u];bits!=0u;bits&=bits-1u){
+   let k=firstTrailingBit(bits);
+   if f.scenery_limits.x==0u||rank>sc_state.cutoff[k]{continue;}
+   let at=atomicAdd(&sc_state.emitted[k],1u);sc_visible[sc_list_base(select(k,14u,k==6u))+at]=slot;drawn=true;
+  }
+  if drawn{atomicOr(&sc_work.history[(f.cloud_cache.x&1u)*SC_HISTORY_WORDS+slot/32u],1u<<(slot&31u));}
+ }
+}
 // After culling: the instance counts of the indirect draws.
 @compute @workgroup_size(1)
 fn scenery_draws(){

@@ -1364,6 +1364,9 @@ impl Renderer {
         if !self.scenery_active() {
             pending.push("scenery");
         }
+        if !self.scenery.cover_ready() {
+            pending.push("ground cover");
+        }
         if !self.pipelines.shadows_ready() {
             pending.push("shadows");
         }
@@ -3346,7 +3349,8 @@ impl Renderer {
             }
         }
         s["body"] = self.body.name.into();
-        s["urban_index_overflow"] = self.scenery.urban.overflow.into();
+        // Every accepted source has a leaf. Dense cells cannot drop index references.
+        s["urban_index_overflow"] = 0.into();
         s["urban_source_cache_bytes"] = self.buildings.source_cache_bytes().into();
         s["surface_source"] = if self.pages.measured() {
             "mapped"

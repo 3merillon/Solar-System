@@ -10,23 +10,38 @@ struct BuildingPoint {p:vec2<f32>,next:u32,boundary:u32}
 @group(0) @binding(132) var<storage,read_write> building_support_write:array<vec4<f32>>;
 @group(0) @binding(133) var<storage,read> building_support:array<vec4<f32>>;
 @group(0) @binding(134) var<uniform> building_control:vec4<u32>;
-struct UrbanIndex {hi:vec4<f32>,lo:vec4<f32>,east:vec4<f32>,north:vec4<f32>,grid:vec4<f32>,info:vec4<u32>,counts:array<u32,16384>,links:array<u32,1048576>,sources:array<BuildingSource,16384>,points:array<BuildingPoint,131072>}
+struct UrbanNode {lo:vec2<f32>,hi:vec2<f32>,end:u32,source:u32}
+struct UrbanIndex {hi:vec4<f32>,lo:vec4<f32>,east:vec4<f32>,north:vec4<f32>,grid:vec4<f32>,info:vec4<u32>,cells:array<u32,16384>,nodes:array<UrbanNode,32767>,sources:array<BuildingSource,16384>,points:array<BuildingPoint,131072>}
 @group(0) @binding(177) var<storage,read> urban_index:UrbanIndex;
-fn urban_cell(hi:vec3<f32>,lo:vec3<f32>)->u32{
- if !field_measured()||f.scenery_work.w<.5||urban_index.info.x==0u{return 0xffffffffu;}
+struct UrbanQuery {p:vec2<f32>,first:u32,end:u32,roads_only:bool}
+fn urban_query(hi:vec3<f32>,lo:vec3<f32>,roads_only:bool)->UrbanQuery{
+ var empty:UrbanQuery;
+ if !field_measured()||f.scenery_work.w<.5||urban_index.info.x==0u{return empty;}
  let d=(hi-urban_index.hi.xyz)+(lo-urban_index.lo.xyz);let q=vec2<f32>(dot(d,urban_index.east.xyz),dot(d,urban_index.north.xyz))*f.planet.x/length(hi+lo);
- let cell=vec2<i32>(floor((q-urban_index.grid.xy)/urban_index.grid.z));if any(cell<vec2<i32>(0))||any(cell>=vec2<i32>(128)){return 0xffffffffu;}
- return u32(cell.y)*128u+u32(cell.x);
+ let cell=vec2<i32>(floor((q-urban_index.grid.xy)/urban_index.grid.z));if any(cell<vec2<i32>(0))||any(cell>=vec2<i32>(128)){return empty;}
+ let span=urban_index.cells[u32(cell.y)*128u+u32(cell.x)];
+ if roads_only&&(span&0x80000000u)==0u{return empty;}
+ return UrbanQuery(q,span&65535u,(span>>16u)&32767u,roads_only);
+}
+// Return only leaves whose padded bound contains the query. An internal
+// node's end skips both children, even when a dense cell straddles subtrees.
+fn urban_leaf(query:UrbanQuery,start:u32)->u32{
+ var i=start;
+ while i<query.end{
+  let n=urban_index.nodes[i];
+  if (query.roads_only&&(n.end&0x80000000u)==0u)||any(query.p<n.lo)||any(query.p>n.hi){i=n.end&32767u;continue;}
+  if n.source!=0xffffffffu{return i;}
+  i++;
+ }
+ return query.end;
 }
 fn urban_local(b:BuildingSource,hi:vec3<f32>,lo:vec3<f32>)->vec2<f32>{let d=(hi-b.hi.xyz)+(lo-b.lo.xyz);return vec2<f32>(dot(d,b.east.xyz),dot(d,b.north.xyz))*f.planet.x/length(hi+lo);}
 fn urban_segment(q:vec2<f32>,a:vec2<f32>,b:vec2<f32>)->f32{let d=b-a;return length(q-a-d*clamp(dot(q-a,d)/max(.0001,dot(d,d)),0.0,1.0));}
 // Shared by visible vegetation and the physics snapshot, including source updates.
 fn urban_blocked(hi:vec3<f32>,lo:vec3<f32>,margin:f32)->bool{
- let cell=urban_cell(hi,lo);if cell==0xffffffffu{return false;}
- // Saturated cells conservatively exclude scenery instead of missing buildings.
- if urban_index.counts[cell]>64u{return true;}
- for(var i=0u;i<min(64u,urban_index.counts[cell]);i++){
-  let b=urban_index.sources[urban_index.links[cell*64u+i]];let q=urban_local(b,hi,lo);
+ let query=urban_query(hi,lo,false);
+ for(var i=urban_leaf(query,query.first);i<query.end;i=urban_leaf(query,i+1u)){
+  let b=urban_index.sources[urban_index.nodes[i].source];let q=urban_local(b,hi,lo);
   if any(q<b.bounds.xy-vec2<f32>(margin))||any(q>b.bounds.zw+vec2<f32>(margin)){continue;}
   if b.colour.w<0.0{if urban_segment(q,urban_index.points[b.data.x].p,urban_index.points[b.data.x+1u].p)<b.east.w*.5+margin{return true;}}
   else{
@@ -37,11 +52,11 @@ fn urban_blocked(hi:vec3<f32>,lo:vec3<f32>,margin:f32)->bool{
 }
 // Paint the displayed terrain itself: identical depth and silhouette throughout LOD morphs.
 fn urban_road(hi:vec3<f32>,lo:vec3<f32>,footprint:f32)->vec4<f32>{
- let cell=urban_cell(hi,lo);if cell==0xffffffffu{return vec4<f32>(0);}
+ let query=urban_query(hi,lo,true);if query.first==query.end{return vec4<f32>(0);}
  let aa=max(.015,footprint*.7);var boundary=1e20;var coverage=0.0;
  var colour=vec3<f32>(0);var marked=false;var center=0.0;var longitudinal=false;var nearest=0u;var cap=vec2<f32>(0);
- for(var i=0u;i<min(64u,urban_index.counts[cell]);i++){
-  let b=urban_index.sources[urban_index.links[cell*64u+i]];if b.colour.w>=0.0{continue;}let q=urban_local(b,hi,lo);
+ for(var i=urban_leaf(query,query.first);i<query.end;i=urban_leaf(query,i+1u)){
+  let b=urban_index.sources[urban_index.nodes[i].source];if b.colour.w>=0.0{continue;}let q=urban_local(b,hi,lo);
   if any(q<b.bounds.xy-vec2<f32>(aa))||any(q>b.bounds.zw+vec2<f32>(aa)){continue;}
   let a=urban_index.points[b.data.x].p;let z=urban_index.points[b.data.x+1u].p;let d=z-a;let len=length(d);let along=dot(q-a,d)/max(.01,len);let across=urban_segment(q,a,z);let width=b.east.w;
   let signed=across-width*.5;
@@ -62,8 +77,8 @@ fn urban_road(hi:vec3<f32>,lo:vec3<f32>,footprint:f32)->vec4<f32>{
  // goes round it, unbroken. The end is compared as the vector
  // from the point in each span's own local frame, which agree to far under a centimetre over a cell.
  if marked&&!longitudinal{
-  for(var j=0u;j<min(64u,urban_index.counts[cell]);j++){
-   if j==nearest{continue;}let o=urban_index.sources[urban_index.links[cell*64u+j]];if o.colour.w>=0.0{continue;}let r=urban_local(o,hi,lo);
+  for(var j=urban_leaf(query,query.first);j<query.end;j=urban_leaf(query,j+1u)){
+   if j==nearest{continue;}let o=urban_index.sources[urban_index.nodes[j].source];if o.colour.w>=0.0{continue;}let r=urban_local(o,hi,lo);
    let oa=urban_index.points[o.data.x].p-r;let oz=urban_index.points[o.data.x+1u].p-r;
    if min(length(oa-cap),length(oz-cap))<0.05{longitudinal=true;break;}
   }

@@ -234,7 +234,13 @@ impl Scenery {
             64 * 64 * 16,
             U::STORAGE | U::COPY_SRC,
         );
-        let refresh_queue = g.buffer("scenery support refresh queue", 65_536 * 4, U::STORAGE);
+        // One visibility bit per slot per frame parity. Support refresh and
+        // draw admission use the following scratch space in adjacent passes.
+        let refresh_queue = g.buffer(
+            "scenery visibility history and work queue",
+            2 * 27_648 * 4 + capacity * 8,
+            U::STORAGE | U::COPY_DST,
+        );
         let jobs = g.buffer(
             "scenery generation dispatches",
             64,
@@ -518,6 +524,8 @@ impl Scenery {
             "scenery_classify",
             "scenery_cover_select",
             "scenery_cover_emit",
+            "scenery_draw_select",
+            "scenery_draw_emit",
         ]
         .iter()
         .map(|name| compute(name, &[]))
@@ -720,10 +728,15 @@ impl Scenery {
         &self,
         e: &mut wgpu::CommandEncoder,
         queries: Option<&wgpu::QuerySet>,
-        _frame: u64,
+        frame: u64,
         marker: &mut crate::timing::Marker,
     ) {
         let records = (self.capacity / 64) as u32;
+        e.clear_buffer(
+            &self.refresh_queue,
+            (frame & 1) * 27_648 * 4,
+            Some(self.capacity / 8),
+        );
         {
             let mut p = Self::timed(e, queries, 9);
             Self::dispatch(&mut p, &self.passes[0], [1, 1, 1]);
@@ -802,6 +815,8 @@ impl Scenery {
                 Self::dispatch(&mut p, &self.passes[15], [records, 1, 1]);
                 Self::dispatch(&mut p, refresh, [65_536 / 64, 1, 1]);
                 Self::dispatch(&mut p, cull, [records, 1, 1]);
+                Self::dispatch(&mut p, &self.passes[18], [7, 1, 1]);
+                Self::dispatch(&mut p, &self.passes[19], [128, 1, 1]);
             }
             Self::dispatch(&mut p, &self.passes[13], [1, 1, 1]);
         }
@@ -876,7 +891,10 @@ impl Scenery {
         }
     }
     pub fn cull_ready(&self) -> bool {
-        self.cull.is_some() && self.refresh.is_some() && self.cover_place.is_some()
+        self.cull.is_some() && self.refresh.is_some()
+    }
+    pub fn cover_ready(&self) -> bool {
+        self.cover_place.is_some()
     }
     /// Create the deferred cull and ground-cover programs once they have compiled.
     pub fn complete(

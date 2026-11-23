@@ -277,6 +277,8 @@ fn main() {
         "scenery_leaf_mip",
         "scenery_capture_copy",
         "scenery_draws",
+        "scenery_draw_select",
+        "scenery_draw_emit",
         "scenery_cover_place",
         "scenery_cover_select",
         "scenery_cover_emit",
