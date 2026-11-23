@@ -501,6 +501,15 @@ impl Stream {
     }
     /// Recompute the wanted set and return what to ask for and what to cancel.
     pub fn update(&mut self, camera: &StreamCamera) -> Commands {
+        self.update_with_repairs(camera, |_, _| HashSet::new())
+    }
+    /// Refresh selected resident pages whose auxiliary data lost its slot. The caller
+    /// chooses them against this frame's priorities. Terrain stays final and mapped.
+    pub fn update_with_repairs(
+        &mut self,
+        camera: &StreamCamera,
+        repairs: impl Fn(u8, &[(PageKey, f32)]) -> HashSet<PageKey>,
+    ) -> Commands {
         self.tick += 1;
         let tick = self.tick;
         let config = self.config;
@@ -744,20 +753,21 @@ impl Stream {
                     is_unseen(*priority) && channel.in_flight.contains_key(key)
                 })
                 .count();
-            let mut refreshing = channel
-                .provisional
-                .iter()
-                .filter(|key| channel.in_flight.contains_key(key))
-                .count();
+            let repairs = repairs(spec.channel, &channel.wanted);
+            let settled = |key: &PageKey| {
+                channel.resident.contains_key(key)
+                    && (!key.pinned() || channel.refreshed.contains(key))
+            };
+            let mut refreshing = channel.in_flight.keys().filter(|key| settled(key)).count();
             let mut issued = 0;
             let mut asks: Vec<(PageKey, f32, bool)> = Vec::new();
             for (key, priority) in &channel.wanted {
                 if issued >= room || (is_unseen(*priority) && unseen >= unseen_limit) {
                     break;
                 }
-                let settled = channel.resident.contains_key(key)
-                    && (!key.pinned() || channel.refreshed.contains(key));
-                let refresh = settled && channel.provisional.contains(key);
+                let settled = settled(key);
+                let refresh =
+                    settled && (channel.provisional.contains(key) || repairs.contains(key));
                 if (settled && (!refresh || refreshing >= REFRESHES_IN_FLIGHT))
                     || channel.in_flight.contains_key(key)
                     || channel.missing.contains(key)
@@ -1145,6 +1155,41 @@ mod tests {
         assert!(fast < slow * 2.0, "{slow} {fast}");
         assert!(faster < slow * 2.0, "{slow} {faster}");
         assert!(faster > 0.0);
+    }
+    #[test]
+    fn resident_repairs_share_the_refresh_budget_and_keep_terrain_final() {
+        let mut s = stream(1125);
+        let eye = camera(6.6, 46.5, 3000.0, [0.0; 3]);
+        let mut repair = HashSet::new();
+        for p in s.update(&eye).want {
+            if p.channel == CHANNEL_HEIGHT {
+                s.on_page(p.channel, p.key, false).unwrap();
+                repair.insert(p.key);
+            }
+        }
+        let repair_requests = |s: &mut Stream, keys: &HashSet<PageKey>| {
+            s.update_with_repairs(&eye, |channel, _| {
+                if channel == CHANNEL_HEIGHT {
+                    keys.clone()
+                } else {
+                    HashSet::new()
+                }
+            })
+            .want
+            .into_iter()
+            .filter(|p| p.refresh)
+            .collect::<Vec<_>>()
+        };
+        let asked = repair_requests(&mut s, &repair);
+        assert_eq!(asked.len(), REFRESHES_IN_FLIGHT);
+        assert!(repair_requests(&mut s, &repair).is_empty());
+        for p in asked {
+            assert_ne!(s.lookup(p.channel, p.key), 0);
+            assert_eq!(s.lookup(p.channel, p.key) & ENTRY_PROVISIONAL, 0);
+            let before = s.slot_of(p.channel, p.key);
+            assert_eq!(s.on_page(p.channel, p.key, false), before);
+        }
+        assert!(repair_requests(&mut s, &HashSet::new()).is_empty());
     }
     #[test]
     fn a_provisional_page_stays_up_and_is_asked_for_again_a_few_at_a_time() {

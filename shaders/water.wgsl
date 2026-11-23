@@ -430,20 +430,36 @@ fn water(@builtin(global_invocation_id) id:vec3<u32>){
  // A coarse triangle crosses the level anywhere between its vertices, so the mesh cannot say where water ends, in either direction. It can stand above water that is there, leaving
  // the bed uncovered short of the shore; and it can lie under ground it never sampled, a spit or a hill's foot, with water over them. The shore is where the field crosses the level,
  // so beyond the mesh's reach the field decides. A pixel the mesh left dry is water at the ground's own distance, at any range: wherever the shading drew a bed, water covers it.
- var claimed=0.0;var trust=0.0;var here=0.0;
+ var claimed=0.0;var trust=0.0;var here=0.0;var mapped_hit=false;
+ var water_depth=textureLoad(ocean_depth,xy,0).g;
  if field_measured()&&!submerged&&ground<1e10{
   trust=measured_water_trust(min(t,ground)*2.0*f.view.w/f.view.y*select(1.0,0.25,water_diagnostic(65536u)));here=1.0-textureLoad(shaded,xy,0).a;
-  if t>=ground{
-   let at=page_pos(f.eye_hi.xyz,f.eye_lo.xyz+rd*ground);let entry=measured_water_entry(at,max(.02,ground*2.0*f.view.w/f.view.y));
-   // A mapped water layer owns an actual interface. Painting the bed as a
-   // second interface created a lower skin and walls at mesh/LOD boundaries.
-   // Keep the legacy image fallback only where no water layer exists.
-   if water_layer_entry(entry,at.face,at.g)==0u{claimed=here;if claimed>0.0{t=ground;water_coverage=claimed;}}
+  if t>=ground&&here>0.0&&textureLoad(normals,xy,0).w>= -100.0{
+   let at=page_pos(f.eye_hi.xyz,f.eye_lo.xyz+f.eye_tail.xyz+rd*ground);let entry=measured_water_entry(at,max(.002,ground*.25*f.view.w/f.view.y));
+   let owner=water_layer_entry(entry,at.face,at.g);
+   if owner==0u{claimed=here;t=ground;water_coverage=claimed;}
+   else{
+    // An arriving shoreline can cover the bed before the coarser mesh reaches
+    // it. Intersect the mapped surface, then check the map at that intersection:
+    // the bed and the visible water can be far apart on a grazing ray.
+    let bed=water_layer_at(owner,at);
+    if bed.level>WATER_NONE{
+     let hit=sphere(rd,bed.level).x;
+     // During refinement even a deep lake can have a coarse terrain triangle
+     // above its water. Check the actual bed and keep all opaque props.
+     let depth=bed.level-page_height_read(owner,at.g,at.frac).x;
+     let wet_proxy=here>=.5&&bed.sdf<0.0&&depth>=0.0;
+     if hit>0.0&&(hit<ground||wet_proxy){
+      claimed=min(here,mapped_ray_coverage(rd,ground,hit,bed));
+      if claimed>0.0{t=hit;mapped_hit=true;water_coverage=claimed;water_depth=max(0.0,depth);}
+     }
+    }
+   }
   }
  }
  // Shore filtering can remove visible water coverage, never resurrect an
  // interface behind the first opaque hit (including trees and rocks).
- if !submerged&&t<ground{
+ if !submerged&&t<ground&&!mapped_hit{
   let weight=surface_detail_weight(rd*t);
   if weight>0.0{
    let depth=textureLoad(ocean_depth,xy,0).g;
@@ -457,11 +473,11 @@ fn water(@builtin(global_invocation_id) id:vec3<u32>){
    water_coverage*=mix(1.0,smoothstep(-width,width,depth),weight*coastal);
   }
  }
- if field_measured()&&t<ground&&!submerged{water_coverage=mix(water_coverage*measured_water_fade(page_pos(f.eye_hi.xyz,f.eye_lo.xyz+rd*t),max(0.002,t*2.0*f.view.w/f.view.y)),here,trust);}
+ if field_measured()&&t<ground&&!submerged&&!mapped_hit{water_coverage=mix(water_coverage*measured_water_fade(page_pos(f.eye_hi.xyz,f.eye_lo.xyz+rd*t),max(0.002,t*2.0*f.view.w/f.view.y)),here,trust);}
  // A coarse water triangle may straddle a mapped bank. The same fine source
  // corridor that carved the channel owns coverage, including close-up pixels
  // where mesh normals are trusted. Never shade water outside that corridor.
- if field_measured()&&!submerged&&water_coverage>0.0{
+ if field_measured()&&!submerged&&water_coverage>0.0&&!mapped_hit{
   let at=page_pos(f.eye_hi.xyz,f.eye_lo.xyz+rd*t);let entry=measured_water_entry(at,max(0.002,t*2.0*f.view.w/f.view.y)*0.125);
   // With water texels the field's own fringe (field_water_here) already decides a claimed pixel; a mesh pixel
   // the excess puts on dry ground is clipped as the old cells were.
@@ -482,7 +498,7 @@ fn water(@builtin(global_invocation_id) id:vec3<u32>){
  if covered{
   let base_lo=lo-radial*height;
   // As tall as the mesh's waves here: shrunk in shallow water by the same rule, on this pixel's depth.
-  river_rapids=0.0;waves=sea_wave(f.eye_hi.xyz,base_lo,fp)*water_wave_scale(height)*water_wave_on_ground(textureLoad(ocean_depth,xy,0).g);n=normalize(radial-(waves.xyz-radial*dot(waves.xyz,radial)));
+  river_rapids=0.0;waves=sea_wave(f.eye_hi.xyz,base_lo,fp)*water_wave_scale(height)*water_wave_on_ground(water_depth);n=normalize(radial-(waves.xyz-radial*dot(waves.xyz,radial)));
   if dot(n,-rd)<0.0{n=-n;}
  }
  // The level of this pixel's water, on a body where it varies.
@@ -561,7 +577,7 @@ fn water(@builtin(global_invocation_id) id:vec3<u32>){
   if image>0.0{
    let a=surface_address(p);var seen=measured_albedo(a.hi,a.lo,max(0.002,t*2.0*f.view.w/f.view.y));
    // Over deep water the image has little to show but the straight seams between its source scenes, so it leans on one deep sea colour.
-   seen=mix(seen,vec3<f32>(0.0037,0.006,0.013),0.7*smoothstep(30.0,200.0,textureLoad(ocean_depth,xy,0).g));
+   seen=mix(seen,vec3<f32>(0.0037,0.006,0.013),0.7*smoothstep(30.0,200.0,water_depth));
    transmission=mix(transmission,seen*(vec3<f32>(0.21,0.27,0.34)*day+vec3<f32>(1.8,1.55,1.3)*f.starlight.xyz*max(0.0,dot(radial,f.sun.xyz))*direct_sun),image);
   }
   color=mix(transmission,reflection,fresnel);
@@ -570,7 +586,7 @@ fn water(@builtin(global_invocation_id) id:vec3<u32>){
   color+=vec3<f32>(2.8,2.35,1.7)*spec*direct_sun;
   // Ray-distance subtraction loses sub-metre depth at orbital distances and
   // samples the bed behind the water point. Use shared-triangle clearance.
-  let depth=textureLoad(ocean_depth,xy,0).g;
+  let depth=water_depth;
   let left=textureLoad(ocean_depth,clamp(xy-vec2<i32>(1,0),vec2<i32>(0),vec2<i32>(f.view.xy)-1),0);
   let right=textureLoad(ocean_depth,clamp(xy+vec2<i32>(1,0),vec2<i32>(0),vec2<i32>(f.view.xy)-1),0);
   let below=textureLoad(ocean_depth,clamp(xy-vec2<i32>(0,1),vec2<i32>(0),vec2<i32>(f.view.xy)-1),0);
@@ -597,5 +613,7 @@ fn water(@builtin(global_invocation_id) id:vec3<u32>){
   let lw=water_layer_entry(entry,at.face,at.g);if lw!=0u{let w=water_layer_at(lw,at);if w.level>WATER_NONE{field_depth=w.level-page_height_read(lw,at.g,at.frac).x;}}
   textureStore(water_out,xy,vec4<f32>(textureLoad(ocean_depth,xy,0).g/20.0,field_depth/20.0,select(0.0,bottom_depth/20.0,bed_path),1));return;
  }
- textureStore(water_out,xy,vec4<f32>(color,select(1.0+water_coverage,0.0,submerged)));
+ var medium_code=select(1.0+water_coverage,0.0,submerged);
+ if mapped_hit{medium_code=3.0+sqrt(.01*t);}
+ textureStore(water_out,xy,vec4<f32>(color,medium_code));
 }

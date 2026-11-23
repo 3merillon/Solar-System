@@ -133,7 +133,11 @@ async function invoke(method,args){
  if(method==='render'){
   const cpuStarted=performance.now();
   if(args[3]){exchangeSpace();const changed=engine.space(args[3]);engine.trails(args[4]||new Float32Array(0));if(changed)connectField(fieldFor(SolarFlight.body_name(changed)));}
-  if(fieldPort&&performance.now()-lastVectorEye>500){lastVectorEye=performance.now();fieldPort.postMessage({type:'vectorEye',position:stats?.buildings?.enabled===false?[0,0,0]:Array.from(args[0]).slice(0,3)});}
+  if(fieldPort&&performance.now()-lastVectorEye>500){
+   lastVectorEye=performance.now();
+   const camera=args[0],position=stats?.buildings?.enabled===false?[0,0,0]:camera.slice(0,3);
+   fieldPort.postMessage({type:'vectorEye',position,target:camera.slice(3,6),width:stats?.width,height:stats?.height,ground:engine.ground_height()});
+  }
   exchangeField();
   // A direction to ask the terrain about (a landmark trip's end), on the body this frame has just made the surface one.
   const probe=args[5]?engine.height(args[5][0],args[5][1],args[5][2]):undefined;

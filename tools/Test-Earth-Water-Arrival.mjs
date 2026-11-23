@@ -29,12 +29,13 @@ const readTargets=b=>b.evaluate(`(async()=>{
  const halves=async k=>{const r=await solarExplorer.capture(k);return new Uint16Array(r.buffer,r.byteOffset,r.byteLength>>1);};
  const half=v=>{const s=v>>15?-1:1,e=(v>>10)&31,m=v&1023;return s*(e===0?m*2**-24:(1+m/1024)*2**(e-15));};
  const position=await floats('position'),ocean=await floats('ocean'),normal=await halves('normal'),shaded=await halves('shaded'),water=await halves('water');
- const w=${W},h=${H};let field=0,left=0,trees=0;
+ const w=${W},h=${H};let field=0,left=0,trees=0,mappedHits=0;
  const here=new Float32Array(w*h),front=new Uint8Array(w*h),tree=new Uint8Array(w*h),lum=new Float32Array(w*h);
  for(let i=0;i<w*h;i++){
   const px=position[4*i],py=position[4*i+1],pz=position[4*i+2],d2=px*px+py*py+pz*pz;if(d2<0.01)continue;
   const s=4*i,sea=Math.abs(ocean[2*i]);here[i]=1-half(shaded[s+3]);front[i]=sea>0&&sea*sea<d2?1:0;tree[i]=half(normal[4*i+3])<-100?1:0;
   lum[i]=Math.log(1e-3+Math.max(0,half(water[s])*0.2126+half(water[s+1])*0.7152+half(water[s+2])*0.0722));
+  if(half(water[s+3])>=3)mappedHits++;
   if(here[i]>=0.5&&!tree[i]){field++;let change=0;for(let k=0;k<3;k++){const a=half(shaded[s+k]),c=half(water[s+k]);change=Math.max(change,Math.abs(c-a)/(Math.abs(a)+1e-3));}if(change<${BARE_CHANGE})left++;}
  }
  // A tree stands over what lies under it: the first ground below its pixels in the image.
@@ -43,7 +44,7 @@ const readTargets=b=>b.evaluate(`(async()=>{
  let edge=0,edges=0,inner=0,inners=0;
  for(let y=0;y<h;y++)for(let x=0;x<w-1;x++){const i=y*w+x,j=i+1;if(here[i]<0.95||here[j]<0.95||tree[i]||tree[j])continue;const d=Math.abs(lum[i]-lum[j]);if(front[i]!==front[j]){edge+=d;edges++;}else{inner+=d;inners++;}}
  const st=solarExplorer.stats(),f=st.field||{};
- return {field,left,trees,edges,edge:edges?edge/edges:0,inner:inners?inner/inners:0,heightDeficit:st.data_lag?.camera_level_deficit,albedoDeficit:st.data_lag?.camera_albedo_deficit,uploaded:st.data_lag?.pages_uploaded,provisional:f.provisional,eox:f.hosts?.['${EOX}']&&{asked:f.hosts['${EOX}'].asked,pauses:f.hosts['${EOX}'].pauses}};
+ return {field,left,trees,mappedHits,edges,edge:edges?edge/edges:0,inner:inners?inner/inners:0,heightDeficit:st.data_lag?.camera_level_deficit,albedoDeficit:st.data_lag?.camera_albedo_deficit,uploaded:st.data_lag?.pages_uploaded,provisional:f.provisional,eox:f.hosts?.['${EOX}']&&{asked:f.hosts['${EOX}'].asked,pauses:f.hosts['${EOX}'].pauses}};
 })()`);
 try{
  for(const kind of SERVERS)for(const v of views){

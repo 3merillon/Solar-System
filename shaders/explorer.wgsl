@@ -437,6 +437,9 @@ fn ground_distance(pixel:vec2<i32>)->f32{let p=textureLoad(positions,pixel,0);if
 fn raster_sea(pixel:vec2<i32>)->f32{let t=abs(textureLoad(ocean_depth,pixel,0).r);return select(1e12,t,t>0.0);}
 fn visible_limit(pixel:vec2<i32>,medium:f32)->f32{
  let ground=ground_distance(pixel);
+ // A mapped interface filling a gap in the raster carries its distance in
+ // the unused part of the half-float alpha range, shared with clouds and TAA.
+ if f.options.z>0.5&&medium>=3.0{let d=(medium-3.0)*10.0;return d*d;}
  // An air ray carries 1 + accepted interface coverage. Rejected proxies
  // leave the sky and aerial perspective at their actual opaque depth.
  if f.options.z>0.5&&(medium>1.0||medium<0.5){return min(ground,raster_sea(pixel));}return ground;

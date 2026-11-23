@@ -13,7 +13,7 @@ use solar_core::{
         CHANNEL_HEIGHT, SLOTS_PER_LAYER, TABLE_LAYERS, WINDOW,
     },
 };
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 /// Row of `page_meta` holding one (x, y) window origin per table layer.
 const ORIGIN_ROW: u32 = 5;
@@ -38,8 +38,7 @@ const WATER_UNKNOWN: f32 = -3.0;
 const WATER_EVICTED: f32 = -4.0;
 /// Water layer texels per page: RGBA16 (distance, level, coverage | kind | fetch, flow).
 pub const WATER_PAGE_BYTES: usize = PAGE_TEXELS * PAGE_TEXELS * 8;
-/// Water pages resident at once, per allocation tier: one layer of the atlas (225 pages, about 128 MB) on the full and
-/// reduced tiers, its first eight rows (120 pages, about 69 MB) on the minimal one, where the height pool holds 675
+/// Water pages resident at once: two layers on full, one on reduced (225 pages), eight rows on minimal (120 pages), where the height pool holds 675
 /// pages. A page past them takes the slot of the page the view needs least (write_water); the page that loses it, or
 /// that finds every slot more needed than itself, reads a coarser page's water, and the loss is counted
 /// (water_layer.evicted). Slots keep the layer's 15 columns, so the shader's arithmetic is the
@@ -50,6 +49,38 @@ pub fn water_slots(tier: &crate::tier::Tier) -> u32 {
         "reduced" => SLOTS_PER_LAYER,
         _ => 8 * PAGES_PER_LAYER_SIDE,
     }
+}
+/// Choose only missing detail that can actually win a slot. At equal priority
+/// the current holders keep their slots, matching the upload admission rule.
+fn water_repairs(
+    wanted: &[(PageKey, f32)],
+    holders: &HashMap<PageKey, u32>,
+    missing: &HashSet<PageKey>,
+    capacity: usize,
+) -> HashSet<PageKey> {
+    let mut selected = HashSet::new();
+    if missing.is_empty() {
+        return selected;
+    }
+    let mut room = capacity;
+    for group in wanted.chunk_by(|a, b| a.1 == b.1) {
+        room = room.saturating_sub(
+            group
+                .iter()
+                .filter(|(k, _)| holders.contains_key(k))
+                .count(),
+        );
+        for (key, _) in group {
+            if room == 0 {
+                return selected;
+            }
+            if missing.contains(key) {
+                selected.insert(*key);
+                room -= 1;
+            }
+        }
+    }
+    selected
 }
 /// A water page as it arrives, beside its height page.
 struct WaterArrived {
@@ -136,6 +167,7 @@ struct Arrived {
     bytes: Vec<u8>,
     /// Empty: sea level everywhere, for the pinned pack. One value: the whole page. Else the grid.
     water: Vec<f32>,
+    layer: Option<WaterArrived>,
 }
 /// Note when a page came on screen, for its fade in.
 fn stamp_arrival(g: &Gpu, meta: &wgpu::Texture, first_row: u32, slot: u32, frame: u64) {
@@ -182,7 +214,8 @@ pub struct PageAtlas {
     pub sampler: wgpu::Sampler,
     water: wgpu::Texture,
     pub water_view: wgpu::TextureView,
-    water_pending: HashMap<PageKey, WaterArrived>,
+    /// Resident height pages that lost their detailed water slot.
+    water_missing: HashSet<PageKey>,
     water_slots: HashMap<PageKey, u32>,
     /// Water slots on this tier (water_slots).
     water_count: u32,
@@ -346,7 +379,7 @@ impl PageAtlas {
             albedo_view: array(&albedo),
             water_view: array(&water),
             water,
-            water_pending: HashMap::new(),
+            water_missing: HashSet::new(),
             water_slots: HashMap::new(),
             water_free: (0..water_count).rev().collect(),
             water_count,
@@ -404,7 +437,7 @@ impl PageAtlas {
         });
         self.cpu = measured.then(|| PageField::new(radius, self.height_max.min(MAX_PAGE_LEVEL)));
         self.arrived.clear();
-        self.water_pending.clear();
+        self.water_missing.clear();
         self.water_slots.clear();
         self.water_free = (0..self.water_count).rev().collect();
         self.water_order.clear();
@@ -563,6 +596,7 @@ impl PageAtlas {
             sources,
             bytes,
             water,
+            layer: None,
         });
         Ok(())
     }
@@ -583,22 +617,31 @@ impl PageAtlas {
                 bytes.len()
             ));
         }
-        self.water_pending.insert(
-            key,
-            WaterArrived {
-                level_offset,
-                level_scale,
-                kind,
-                level,
-                bytes,
-            },
-        );
+        // The pinned and live versions of the same height tile can both be queued.
+        // Attach the layer to the exact upload that supplied it.
+        let page = self
+            .arrived
+            .iter_mut()
+            .rev()
+            .find(|p| p.channel == CHANNEL_HEIGHT && p.key == key)
+            .ok_or("water layer arrived without its queued height page")?;
+        page.layer = Some(WaterArrived {
+            level_offset,
+            level_scale,
+            kind,
+            level,
+            bytes,
+        });
         Ok(())
     }
     /// The water layer parameters of a height slot (WATER_LAYER_X), and the water texels when it has them.
-    fn write_water(&mut self, g: &Gpu, key: PageKey, slot: u32) {
-        let params = match self.water_pending.remove(&key) {
-            None => [WATER_UNKNOWN, 0.0, 0.0, 0.0],
+    fn write_water(&mut self, g: &Gpu, key: PageKey, slot: u32, layer: Option<WaterArrived>) {
+        self.water_missing.remove(&key);
+        let params = match layer {
+            None => {
+                self.release_water(key);
+                [WATER_UNKNOWN, 0.0, 0.0, 0.0]
+            }
             Some(w) if w.kind == -2 => {
                 self.water_layer.dry += 1;
                 self.release_water(key);
@@ -652,7 +695,8 @@ impl PageAtlas {
                                 let Some((at, least)) = victim else {
                                     return;
                                 };
-                                if least.is_finite() && least <= own {
+                                if least <= own {
+                                    self.water_missing.insert(key);
                                     self.water_layer.evicted += 1;
                                     self.water_layer.resident = self.water_slots.len() as u32;
                                     self.write_water_params(
@@ -672,6 +716,8 @@ impl PageAtlas {
                                     .as_ref()
                                     .and_then(|s| s.slot_of(CHANNEL_HEIGHT, old))
                                 {
+                                    self.water_missing.insert(old);
+                                    self.height_arrivals.push(old);
                                     self.write_water_params(g, hs, [WATER_EVICTED, 0.0, 0.0, 0.0]);
                                 }
                                 ws
@@ -775,7 +821,18 @@ impl PageAtlas {
         } else {
             [usize::MAX; 2]
         };
-        let commands = stream.update(camera);
+        let commands = stream.update_with_repairs(camera, |channel, wanted| {
+            if channel == CHANNEL_HEIGHT {
+                water_repairs(
+                    wanted,
+                    &self.water_slots,
+                    &self.water_missing,
+                    self.water_count as usize,
+                )
+            } else {
+                HashSet::new()
+            }
+        });
         self.commands.want.extend(commands.want);
         self.commands.cancel.extend(commands.cancel);
     }
@@ -957,7 +1014,7 @@ impl PageAtlas {
                 stamp_arrival(g, &self.meta, HEIGHT_ARRIVAL_ROW, slot, frame);
                 self.height_serial = self.height_serial.wrapping_add(1);
                 self.height_arrivals.push(page.key);
-                water_uploads.push((page.key, slot));
+                water_uploads.push((page.key, slot, page.layer));
                 if let (Some(cpu), Ok(p)) = (
                     &mut self.cpu,
                     HeightPage::from_bytes(
@@ -977,8 +1034,15 @@ impl PageAtlas {
         if !self.arrived.is_empty() {
             self.lag.upload_deferred_frames += 1;
         }
-        for (key, slot) in water_uploads {
-            self.write_water(g, key, slot);
+        for (key, slot, layer) in water_uploads {
+            if self
+                .stream
+                .as_ref()
+                .and_then(|s| s.slot_of(CHANNEL_HEIGHT, key))
+                == Some(slot)
+            {
+                self.write_water(g, key, slot, layer);
+            }
         }
         let Some(stream) = &mut self.stream else {
             return;
@@ -1015,7 +1079,7 @@ impl PageAtlas {
         }
         for key in gone {
             self.release_water(key);
-            self.water_pending.remove(&key);
+            self.water_missing.remove(&key);
         }
         let Some(stream) = &mut self.stream else {
             return;
@@ -1131,5 +1195,31 @@ impl PageAtlas {
             let entry = stream.lookup(channel, key);
             u32::from(finest).saturating_sub(u32::from(solar_core::streaming::entry_level(entry)))
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_water_regains_capacity_on_return_without_churning_at_rest() {
+        let page = |x| PageKey {
+            face: 0,
+            level: 12,
+            x,
+            y: 0,
+        };
+        let (lake, coast, bay) = (page(0), page(1), page(2));
+        let holders = HashMap::from([(coast, 0), (bay, 1)]);
+        let missing = HashSet::from([lake]);
+        let away = [(coast, 0.0), (bay, 1.0), (lake, 1.0)];
+        assert!(water_repairs(&away, &holders, &missing, 2).is_empty());
+        let back = [(lake, 0.0), (coast, 1.0), (bay, 2.0)];
+        assert_eq!(water_repairs(&back, &holders, &missing, 2), missing);
+        let restored = HashMap::from([(coast, 0), (lake, 1)]);
+        assert!(water_repairs(&back, &restored, &HashSet::from([bay]), 2).is_empty());
+        // If a slot becomes free, even the lower-priority tile can recover.
+        assert_eq!(water_repairs(&away, &holders, &missing, 3), missing);
     }
 }

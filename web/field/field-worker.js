@@ -115,7 +115,7 @@ export function initField(data,env={}){
   // The water layer reads shores a band beyond the page, so its tiles reach that far too.
   const plan=riverTilePlan(nodesForPage(page,'height',Math.min(14,page.level+1),256),page.level,{band:waterLayer?WATER_BAND+4:0});if(plan.omitted)count.riverTilesOmitted++;
   let provisional=false;const dem=new Map();
-  const found=(await Promise.all(plan.tiles.map(t=>riverTile(t,w,job).catch(e=>{if(e?.name!=='AbortError')provisional=true;return null;})))).filter(Boolean);
+  const found=(await Promise.all(plan.tiles.map(t=>riverTile(t,w,job).catch(()=>{provisional=true;return null;})))).filter(Boolean);
   if(job.cancelled)return {tiles:[],dem,provisional};
   const need=new Map(),z=Math.min(13,cfg.height.maxZoom),n=2**z;
   // The fixed DEM that river levels and lake levels on river pages are probed on (rivers.js, map-water.js), about 150 m
@@ -408,7 +408,7 @@ export function initField(data,env={}){
   pack.done=true;
  }
 
- port.onmessage=({data:m})=>{if(m?.type==='want')want(m);else if(m?.type==='vectorEye')vectors?.eye(m.position);};
+ port.onmessage=({data:m})=>{if(m?.type==='want')want(m);else if(m?.type==='vectorEye')vectors?.eye(m.position,m.height,m.target,m.width,m.ground);};
  const timer=setInterval(stats,env.statsMs??250);
  port.postMessage({type:'ready',sources:{...Object.fromEntries(Object.values(resolved.sources).map(s=>[s.id,{attribution:s.attribution,cachePermission:s.cachePermission,maxZoom:s.maxZoom}])),osm:{attribution:VECTOR_CREDIT}}});
  postAttribution([]);

@@ -29,7 +29,7 @@ export function buildingMetadata(prop,seed){
  const roofHeight=roofKind>1?Math.min(height*.35,metres(prop['roof:height'])??2.4):0;
  return {height,minimum,style,roofKind,roofHeight,colour:colour(prop['building:colour']??prop.colour??prop.color,seed),estimated:!explicit&&!levels};
 }
-export function buildingSources(tiles){
+export function buildingSources(tiles,{maxRecords=BUILDING_LIMIT,maxPoints=POINT_LIMIT}={}){
  const records=[],points=[],stats={buildings:0,points:0,overBudget:0,complex:0,hidden:0,estimatedHeights:0};
  for(const tile of tiles){const layer=tile.layers?.building;if(!layer)continue;const extent=layer.extent;
   for(const feature of layer.features){const prop=feature.properties;
@@ -38,7 +38,7 @@ export function buildingSources(tiles){
     if(ringArea(p)>0||!group){group=[];groups.push(group);}group.push(p);
    }
    for(let gi=0;gi<groups.length;gi++){const rings=groups[gi],count=rings.reduce((n,p)=>n+p.length,0);
-    if(count>RING_LIMIT){stats.complex++;continue;}if(records.length>=BUILDING_LIMIT||points.length+count>POINT_LIMIT){stats.overBudget++;continue;}
+    if(count>RING_LIMIT){stats.complex++;continue;}if(records.length>=maxRecords||points.length+count>maxPoints){stats.overBudget++;continue;}
     const all=rings.flat(),cx=all.reduce((s,p)=>s+p[0],0)/count,cy=all.reduce((s,p)=>s+p[1],0)/count;
     const [lon,lat]=tilePointToLonLat(tile.z,tile.x,tile.y,extent,[cx,cy]).map(v=>v*rad),up=[Math.sin(lon)*Math.cos(lat),Math.sin(lat),Math.cos(lon)*Math.cos(lat)];
     const east=[Math.cos(lon),0,-Math.sin(lon)],north=[-Math.sin(lon)*Math.sin(lat),Math.cos(lat),-Math.cos(lon)*Math.sin(lat)],anchor=up.map(v=>v*R),hi=anchor.map(v=>Math.floor(v/4096)*4096),lo=anchor.map((v,k)=>v-hi[k]);
@@ -63,7 +63,7 @@ export function buildingSources(tiles){
    }
   }
  }
- stats.buildings=records.length;appendRoadSources(tiles,records,points,stats);
+ stats.buildings=records.length;appendRoadSources(tiles,records,points,stats,maxRecords,maxPoints);
  const rb=new ArrayBuffer(records.length*112),rf=new Float32Array(rb),ru=new Uint32Array(rb);
  records.forEach((r,i)=>{rf.set(r,i*28);for(let k=20;k<24;k++)ru[i*28+k]=r[k];});
  const pb=new ArrayBuffer(points.length*16),pf=new Float32Array(pb),pu=new Uint32Array(pb);points.forEach((p,i)=>{pf[i*4]=p[0];pf[i*4+1]=p[1];pu[i*4+2]=p[2];pu[i*4+3]=p[3];});

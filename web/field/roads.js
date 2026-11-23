@@ -18,7 +18,7 @@ export function clipRoad(a,b,extent){
  }
  return hi>lo?[a.map((v,k)=>v+d[k]*lo),a.map((v,k)=>v+d[k]*hi)]:null;
 }
-export function appendRoadSources(tiles,records,points,stats){
+export function appendRoadSources(tiles,records,points,stats,maxRecords=16384,maxPoints=131072){
  let count=0;stats.roads=0;stats.roadOverflow=0;stats.roadWidthsEstimated=0;
  for(const tile of tiles){const layer=tile.layers?.transportation;if(!layer)continue;
   for(const f of layer.features){const p=f.properties||{},kind=p.class;if(!Object.hasOwn(widths,kind)||p.brunnel==='tunnel'||p.brunnel==='bridge')continue;
@@ -27,7 +27,7 @@ export function appendRoadSources(tiles,records,points,stats){
     const phase=travelled;travelled+=metresBetween(tile,layer.extent,path[i-1],path[i]);
     const span=clipRoad(path[i-1],path[i],layer.extent);if(!span)continue;
     const [a,b]=span,cx=(a[0]+b[0])/2,cy=(a[1]+b[1])/2;
-    if(count>=ROAD_LIMIT||records.length>=16384||points.length+2>131072){stats.roadOverflow++;continue;}
+    if(count>=ROAD_LIMIT||records.length>=maxRecords||points.length+2>maxPoints){stats.roadOverflow++;continue;}
     const [lon,lat]=tilePointToLonLat(tile.z,tile.x,tile.y,layer.extent,[cx,cy]).map(x=>x*Math.PI/180),R=6371000;
     const up=[Math.sin(lon)*Math.cos(lat),Math.sin(lat),Math.cos(lon)*Math.cos(lat)],east=[Math.cos(lon),0,-Math.sin(lon)],north=[-Math.sin(lon)*Math.sin(lat),Math.cos(lat),-Math.cos(lon)*Math.sin(lat)];
     const anchor=up.map(x=>x*R),hi=anchor.map(x=>Math.floor(x/4096)*4096),lo=anchor.map((x,k)=>x-hi[k]);

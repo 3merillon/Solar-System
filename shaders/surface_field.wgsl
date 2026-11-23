@@ -279,29 +279,26 @@ const WATER_LAYER_X:i32=256;
 const WATER_BAND_TEXELS:f32=32.0;
 struct WaterLayer {sdf:f32,level:f32,coverage:f32,kind:u32,flow:vec2<f32>,cell:f32}
 fn water_layer_info(entry:u32)->vec4<f32>{let slot=page_entry_slot(entry);return textureLoad(page_meta,vec2<i32>(WATER_LAYER_X+i32(slot%256u),i32(slot/256u)),0);}
-// The entry whose water layer answers for a point: the page itself, or a coarser one when its water slot was lent
-// to another page (at most four levels up). Zero when none of them carries the layer.
-// A pinned page (levels 0-2, from the pack) carries no layer; then the finest page resident at the point answers if it
-// does (below, for any page), so a far query (the water mesh's coarse cells, a far pixel) and a near one (the lifted ocean's fragment) agree
-// on whether the layer holds there; otherwise the mesh drops far cells that the lifted ocean yields, and no surface
-// is drawn (Test-Earth-Sea-Cover). Pages of level 3 and finer without a layer keep the old reads.
-// Where the walk from a page whose slot was lent ends without an answer (slots lent along the whole walk, or a pinned
-// page at its end), the finest page resident at the point answers if it carries the layer: every caller then agrees on
-// whether the layer holds there. A water mesh cell and its vertices read pages one level apart over the morph to the
-// coarser ring, and a vertex that found no layer would collapse the cell's triangles (a ring of deep sea with no
-// surface). Not for a page built without the layer (the old reads stand there): the finest page is a walk
-// down the page table from the finest level, and asked for every such query it cost 0.9 ms in the water stage where
-// the ground stood on pages without the layer (the fixtures' far placeholder ground).
+// Use one shoreline for both the coarse mesh and fine pixels. A page whose
+// slot was evicted can inherit its nearest available ancestor. A page built
+// without a water layer (including pinned pack data) keeps its legacy reads.
 fn water_layer_entry(entry:u32,face:u32,g:vec2<u32>)->u32{
  // Surface height must not change with the requesting mesh's LOD. Every
  // reader uses the finest resident water description at this world address.
  // A fine dry page is authoritative too; old coarse water cannot leak through it.
  let fine=page_entry(0u,face,u32(f.field.y),g);
- if fine!=0u&&water_layer_info(fine).x>-2.5{return fine;}
- if entry==0u{return 0u;}var e=entry;
- for(var k=0u;k<5u;k++){let x=water_layer_info(e).x;if x>-2.5{return e;}if x>-3.5{break;}let l=page_entry_level(e);if l==0u{break;}e=page_entry(0u,face,l-1u,g);if e==0u{break;}}
- // The finest entry was checked above. The table and metadata are read-only
- // throughout this invocation; repeating that lookup cannot change its answer.
+ var e=entry;
+ if fine!=0u{
+  let info=water_layer_info(fine).x;if info>-2.5{return fine;}
+  // A coarse mesh and a fine fragment must inherit the same shoreline while
+  // a detailed tile is waiting to regain a slot.
+  if info< -3.5{e=fine;}
+ }
+ while e!=0u{
+  let x=water_layer_info(e).x;if x>-2.5{return e;}
+  let l=page_entry_level(e);if x>-3.5||l==0u{break;}
+  e=page_entry(0u,face,l-1u,g);
+ }
  return 0u;
 }
 // Bilinear read of the water layer at a point of one page (the page's own grid, as page_surface_read).
@@ -333,6 +330,26 @@ const WATER_SWASH:f32=0.25;
 fn water_layer_coverage(w:WaterLayer,footprint:f32)->f32{
  let sharp=clamp(0.5-w.sdf/max(footprint,WATER_SWASH),0.0,1.0);
  return mix(sharp,select(w.coverage,sharp,w.sdf<=-w.cell),smoothstep(0.5,2.0,footprint/max(w.cell,1e-4)));
+}
+// Verify a reconstructed ray crossing against the shoreline at its own address.
+fn mapped_coverage_at(p:vec3<f32>,level:f32,footprint:f32)->f32{
+ let pos=page_pos(f.eye_hi.xyz,f.eye_lo.xyz+f.eye_tail.xyz+p);
+ let owner=water_layer_entry(measured_water_entry(pos,footprint*.125),pos.face,pos.g);
+ if owner==0u{return 0.0;}
+ let w=water_layer_at(owner,pos);
+ if w.level<=WATER_NONE||abs(w.level-level)>max(.25,footprint){return 0.0;}
+ return water_layer_coverage(w,footprint);
+}
+fn mapped_ray_coverage(rd:vec3<f32>,ground:f32,hit:f32,bed:WaterLayer)->f32{
+ if hit<=0.0{return 0.0;}
+ let fp=max(.002,hit*2.0*f.view.w/f.view.y);
+ var coverage=mapped_coverage_at(rd*hit,bed.level,fp);
+ // A segment inside the signed shoreline distance is all water. For a
+ // longer one check its middle before looking through a coarse triangle.
+ if coverage>0.0&&hit-ground>max(fp,-bed.sdf){
+  coverage=min(coverage,mapped_coverage_at(rd*((hit+ground)*.5),bed.level,fp));
+ }
+ return coverage;
 }
 // Quadratic B-spline height in x; chart-unit derivatives in y, z. Same weights as spline().
 fn page_height_read(entry:u32,g:vec2<u32>,frac:vec2<f32>)->vec3<f32>{return page_surface_read(entry,g,frac).xyz;}
@@ -682,7 +699,14 @@ fn measured_surface_albedo(point:vec3<f32>,height:f32,slope:f32,footprint:f32)->
   if level>WATER_NONE{
    near=1.0;let fade=measured_water_fade(pos,finer);settled=fade*fade;
    let rise=min(0.5*footprint*sqrt(max(1.0-slope*slope,0.0))/max(slope,0.1),2.0);let depth=level-height;
-   let c=water_layer_coverage(w,footprint)*smoothstep(-0.05-rise,0.05+rise,depth);
+   var c=water_layer_coverage(w,footprint)*smoothstep(-0.05-rise,0.05+rise,depth);
+   // A newly resolved lake can be far below the terrain triangle still on
+   // screen. The bed material must agree with the water seen along this ray:
+   // its projection straight down can be in the lake while the ray hits land.
+   if c>0.0&&sc_radial_height(point)>level+2.0{
+    let rd=normalize(point);let hit=sphere(rd,level).x;
+    c=min(c,mapped_ray_coverage(rd,length(point),hit,w));
+   }
    field_water_here=c*fade;under=c*smoothstep(-0.02,0.15,depth)*settled*unseen;
   }
  }else if entry!=0u&&page_water_texels(entry){

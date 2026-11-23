@@ -5,6 +5,7 @@ import {mkdir,writeFile} from 'node:fs/promises';
 import {headless} from './Headless.mjs';
 import {runFrames,capture} from './Explorer-Test-Lib.mjs';
 const dir=process.argv[2]||'evidence/local/lake-surface',W=640,H=360;
+const pressure=process.argv.includes('--pressure');
 const base=process.argv.find(a=>a.startsWith('--base='))?.slice(7)||'http://127.0.0.1:5198/';
 await mkdir(dir,{recursive:true});const b=await headless(dir),report={cases:[]};
 try{
@@ -12,19 +13,51 @@ try{
  await b.evaluate(`(async()=>{
   document.body.innerHTML='<canvas width="${W}" height="${H}"></canvas>';
   const {createWorkerExplorer}=await import('${base}worker-client.js');
-  const engine=await createWorkerExplorer(document.querySelector('canvas'),()=>{},e=>{window.fatal=e},'full','earth');
+  const engine=await createWorkerExplorer(document.querySelector('canvas'),()=>{},e=>{window.fatal=e},'${pressure?'minimal':'full'}','earth');
   await engine.configure(JSON.stringify({...JSON.parse(engine.settings()),clouds:false,trees:false,rocks:false,buildings:false,atmosphere:false,wave_height:0,render_scale:1,fetch_limits:false}));
   const height=new Uint8Array(264*264*2),albedo=new Uint8Array(264*264*4);for(let i=0;i<albedo.length;i+=4)albedo.set([115,123,98,255],i);
-  for(let face=0;face<6;face++){await engine.page_arrived(0,face,0,0,0,396,0,1,height,Float32Array.of(418));await engine.water_page_arrived(face,0,0,0,0,0,2,418,new Uint8Array(0));}
-  window.supply=async()=>{const text=await engine.page_commands();if(!text)return;for(const p of JSON.parse(text).pages){await engine.page_arrived(p.channel,p.face,p.level,p.x,p.y,396,0,1,p.channel===0?height:albedo,Float32Array.of(p.level<12?418:402));if(p.channel===0)await engine.water_page_arrived(p.face,p.level,p.x,p.y,0,0,2,p.level<12?418:402,new Uint8Array(0));}};
-  const lon=.12,lat=.89;window.n=[Math.cos(lat)*Math.sin(lon),Math.sin(lat),Math.cos(lat)*Math.cos(lon)];window.t=[-Math.sin(lat)*Math.sin(lon),Math.cos(lat),-Math.sin(lat)*Math.cos(lon)];
-  window.setView=(height,pitch)=>{const eye=n.map(v=>v*(6371000+height));solarExplorer.camera=[eye,eye.map((v,i)=>v+t[i]*Math.cos(pitch)-n[i]*Math.sin(pitch)),n];};
+  for(let face=0;face<6;face++){
+   await engine.page_arrived(0,face,0,0,0,396,0,1,height,Float32Array.of(-1000000));
+   await engine.water_page_arrived(face,0,0,0,0,0,-2,0,new Uint8Array(0));
+   await engine.page_arrived(0,face,0,0,0,396,0,2,height,Float32Array.of(418));
+   await engine.water_page_arrived(face,0,0,0,0,0,2,418,new Uint8Array(0));
+  }
+  const wet=new Uint16Array(264*264*4);
+  for(let i=0;i<wet.length;i+=4){wet[i]=16384;wet[i+2]=255+(2<<8);}
+  window.repairs=0;
+  window.supply=async()=>{
+   const text=await engine.page_commands();if(!text)return;
+   for(const p of JSON.parse(text).pages){
+    const level=p.level<12?418:402;
+    await engine.page_arrived(p.channel,p.face,p.level,p.x,p.y,396,0,2,p.channel===0?height:albedo,Float32Array.of(level));
+    if(p.channel!==0)continue;
+    if(p.refresh)repairs++;
+    if(${pressure}&&p.level>=3)await engine.water_page_arrived(p.face,p.level,p.x,p.y,level,0,-1,0,new Uint8Array(wet.buffer));
+    else await engine.water_page_arrived(p.face,p.level,p.x,p.y,0,0,2,level,new Uint8Array(0));
+   }
+  };
+  window.setView=(height,pitch,offset=0)=>{
+   const lon=.12+offset,lat=.89,n=[Math.cos(lat)*Math.sin(lon),Math.sin(lat),Math.cos(lat)*Math.cos(lon)],t=[-Math.sin(lat)*Math.sin(lon),Math.cos(lat),-Math.sin(lat)*Math.cos(lon)];
+   const eye=n.map(v=>v*(6371000+height));solarExplorer.camera=[eye,eye.map((v,i)=>v+t[i]*Math.cos(pitch)-n[i]*Math.sin(pitch)),n];
+  };
   window.solarExplorer={engine,step(dt){return engine.render(this.camera.flat(),dt,0)},stats:()=>JSON.parse(engine.stats()),telemetry:()=>JSON.parse(engine.telemetry()),capture:k=>engine.capture(k)};setView(408,.18);
  })()`);
  async function settle(count){for(let i=0;i<count;i+=10){await b.evaluate('solarExplorer.engine.complete_pending()');await b.evaluate('supply()');await runFrames(b,10);if(await b.evaluate('window.fatal'))throw Error(await b.evaluate('window.fatal'));}}
  await settle(420);
+ assert.equal(await b.evaluate('solarExplorer.stats().water_layer.dry'),6,'each queued height revision consumes its own water descriptor');
  for(let i=0;i<1200;i++){await settle(1);if(!(await b.evaluate("solarExplorer.stats().pending_features")).length)break;await new Promise(r=>setTimeout(r,50));}
  assert.equal((await b.evaluate("solarExplorer.stats().pending_features")).length,0,"browser pipelines ready");
+ if(pressure){
+  assert.equal(await b.evaluate('solarExplorer.stats().water_layer.resident'),120);
+  await b.evaluate('setView(408,.18,.001)');await settle(500);
+  const away=await b.evaluate('repairs');
+  await b.evaluate('setView(408,.18)');await settle(500);
+  const returned=await b.evaluate('repairs');
+  assert.ok(returned>away,'returning requests previously evicted water detail');
+  await settle(120);
+  assert.equal(await b.evaluate('repairs'),returned,'the same full atlas settles without refresh churn');
+  report.restoredOnReturn=returned-away;
+ }
  for(const [name,height,pitch] of [['above',408,.18],['near',402.2,.04],['below',401.5,-.12]]){
   await b.evaluate(`setView(${height},${pitch})`);await settle(120);
   const buf=await capture(b,`${dir}/${name}-ocean.bin`,W,H,'ocean');
