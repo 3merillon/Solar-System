@@ -31,8 +31,9 @@ open data. This is version 2 of [Solar-System](#version-1); it replaces the WebG
   the global maps of the missions that went there, with real relief where an elevation
   model exists (the Moon, Mercury, Venus, Mars, Pluto and Charon).
 - **Read the map.** Press **N** and the IAU's official names appear on the nearest world:
-  15,544 features on 25 bodies. Click one to read what it is, how large, and who or what it
-  was named after, then go there.
+  15,544 features on 25 bodies. Click one for a field guide on the flight HUD. Trace the
+  landslides around Olympus Mons, compare measured lunar crater depths, or look up the
+  terrain Magellan mapped on Venus. The navigation panel has the full entry and its sources.
 - **Move through time.** The planets and moons follow a JPL ephemeris. Run the clock
   forward or backward, from real time to a year per second, or set a date and watch the
   shadows, the phases and the moons of Jupiter where they were or will be.

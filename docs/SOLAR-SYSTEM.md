@@ -230,8 +230,8 @@ on bare rock under 10 m imagery has not been judged.** The owner's eye is that t
 Added 15 November 2026 (`56e20cb`). The IAU Gazetteer of Planetary Nomenclature (IAU WGPSN,
 USGS Astrogeology; public domain per its metadata) gives 15,544 adopted names with coordinates on the 25 bodies the
 explorer draws (Moon 9,087, Mars 2,055, Venus 1,985, Mercury 621, ...). `tools/Bake-Landmarks.mjs`
-bakes the per-body centre-point downloads into `web/landmarks/<naif>.json` (1.5 MB in all; a
-body's file loads when the eye is near it). Coordinates are planetocentric latitude and east
+bakes the per-body centre-point downloads into `web/landmarks/<naif>.json`. A body's file
+loads when the eye is near it. Coordinates are planetocentric latitude and east
 longitude, as the source metadata states for every body and as the maps and `jump_over` use.
 
 - `SolarFlight.surface_markers` projects latitude/longitude pairs on the body's reference sphere
@@ -239,8 +239,15 @@ longitude, as the source metadata states for every body and as the maps and `jum
   screen and facing the eye. Relief is not considered: a label stands on the sphere.
 - `web/landmarks.js` labels the nearest body's features (the Landmarks checkbox, or N) by
   prominence (size weighted by kind), only features over 22 px, within a screen-area budget
-  (about 25 at 1280 x 720), without overlap. A click opens the gazetteer entry (type, size,
-  coordinates, origin of the name, official link) with *Go there*.
+  (about 25 at 1280 x 720), without overlap. A click loads the local field guide for that
+  body. The HUD shows the reading and the panel includes the measurements, map context,
+  name history, sources and *Go there*.
+- `tools/Bake-Landmark-Articles.py` joins English Wikipedia articles by Wikidata's Gazetteer
+  ID and stores their revision IDs. `tools/Bake-Landmark-Surveys.py` matches lunar crater
+  depth measurements and Venus radar observations. `tools/Bake-Landmark-Geology.py` samples
+  published geologic units at the recorded centers on Mars and the Moon. Features without
+  dedicated studies use Gazetteer records, nearby named landmarks and landform guides.
+  Source tables and spatial analysis libraries are used only while baking.
 - Checked headless at the time: Mars from 3,200 km and the Moon from 1,500 km; over Olympus Mons
   the 610 km gazetteer outline lies on the volcano's scarp in the Mars mosaic.
 

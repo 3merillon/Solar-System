@@ -99,13 +99,14 @@ export async function startSolar({engine,params,canvas,$}){
  const entry=document.createElement('section');entry.id='selection-entry';entry.hidden=true;
  entry.setAttribute('role','status');entry.setAttribute('aria-label','Selected place');
  const entryName=document.createElement('strong'),entryKind=document.createElement('div'),entryText=document.createElement('p');
- entry.append(entryName,entryKind,entryText);document.body.append(entry);
+ const entryCredit=document.createElement('small');
+ entry.append(entryName,entryKind,entryText,entryCredit);document.body.append(entry);
  function syncGo(){
   const disabled=!Number(select.value)&&!landmarks?.selected;
   for(const id of ['hud-go','touch-go']){const button=$(id);if(button)button.disabled=disabled;}
  }
- function showEntry(name,kind,text=''){
-  entryName.textContent=name;entryKind.textContent=kind;entryText.textContent=text;entry.hidden=false;
+ function showEntry(name,kind,text='',credit=''){
+  entryName.textContent=name;entryKind.textContent=kind;entryText.textContent=text;entryCredit.textContent=credit;entry.hidden=false;
  }
  function setTarget(value){
   const id=Number(value);select.value=String(id);landmarks?.clear();
@@ -305,7 +306,7 @@ $('solar-look').onclick=look;$('solar-fly').onclick=fly;$('solar-stop').onclick=
  const indicators=installPlanetIndicators({canvas,onSelect:id=>setTarget(id)});
  // Named features of the nearest body: Go there sets the craft over it, looking straight down, high enough to see it whole.
  landmarks=installLandmarks({canvas,flight,radius:id=>SolarFlight.body_radius(id),onGo:s=>goOver(s),onLand:s=>landAt(s),
-  onShow:(s,kind,origin)=>{select.value='0';syncGo();showEntry(s.name,nameOf(s.body)+' · '+kind,origin);},onClear:()=>{entry.hidden=true;syncGo();}});
+  onShow:(s,kind,description,credit)=>{select.value='0';syncGo();showEntry(s.name,nameOf(s.body)+' · '+kind,description,credit);},onClear:()=>{entry.hidden=true;syncGo();}});
  landmarks.attach(hud);hud.insertBefore($('solar-landmark'),$('solar-display-title'));
  $('solar-landmarks-on').checked=landmarks.enabled;$('solar-landmarks-on').onchange=()=>{landmarks.enabled=$('solar-landmarks-on').checked;$('solar-landmarks-on').blur();};
  window.addEventListener('keydown',e=>{if(!forGame(e)||e.repeat||e.code!=='KeyN')return;landmarks.enabled=!landmarks.enabled;$('solar-landmarks-on').checked=landmarks.enabled;});

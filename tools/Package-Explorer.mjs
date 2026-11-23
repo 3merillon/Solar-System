@@ -8,13 +8,19 @@ import {verifyExplorerBuild} from './Verify-Explorer-Build.mjs';
 
 const root=fileURLToPath(new URL('../',import.meta.url));
 const generated=resolve(root,process.argv[2]||'web/pkg');
-const output=resolve(root,'dist');
+const output=resolve(root,process.argv[3]||'dist');
 const files=['index.html','explorer.html','explorer.js','explorer.css','flight.js','game-input.js','credits.js','solar.js','planet-indicators.js','landmarks.js','quality.js','touch.js','worker-client.js','render-worker.js','pack-base.js','gpu-startup.js','flight-deck.js','flight-deck.css','celestial-music.js','music-theory.js','music-harmony.js','music-composer.js','music-synth.js','music-engine.js','music-director.js','music-rmt.js','THIRD-PARTY-NOTICES.txt','THIRD-PARTY-RUST.txt','home-zone.js','favicon.ico','favicon.svg','favicon-16x16.png','favicon-32x32.png','apple-touch-icon.png'];
 // web/field/*.js is the Earth field worker. The tile pack itself is not packaged yet.
 const fieldDir=resolve(root,'web/field');
 files.push(...(await readdir(fieldDir)).filter(f=>f.endsWith('.js')).sort().map(f=>`field/${f}`));
 // web/landmarks/*.json: IAU feature names per body (tools/Bake-Landmarks.mjs), public domain.
 files.push(...(await readdir(resolve(root,'web/landmarks'))).filter(f=>f.endsWith('.json')).sort().map(f=>`landmarks/${f}`));
+files.push('landmark-guide.js');
+const landmarkGroups=['articles','surveys','geology'];
+for(const group of landmarkGroups){
+ const dir='landmarks/'+group;
+ files.push(...(await readdir(resolve(root,'web',dir))).filter(f=>/^\d+\.json$/.test(f)).sort().map(f=>dir+'/'+f));
+}
 const hash=b=>createHash('sha256').update(b).digest('hex');
 const wasm=await readFile(resolve(generated,'solar_explorer_bg.wasm'));
 const shaders=await verifyExplorerBuild(resolve(generated,'solar_explorer_bg.wasm'),root);
@@ -51,7 +57,11 @@ await writeFile(resolve(output,'pkg/explorer-manifest.json'),JSON.stringify(mani
 // Fail on stale/unexpected output instead of deploying an obsolete function or lab.
 async function check(path,allowed){for(const item of await readdir(path)){if(!allowed.includes(item))throw Error(`Unexpected static output: ${relative(root,resolve(path,item))}`);}}
 await check(output,[...files.filter(f=>!f.includes('/')),'pkg','field','landmarks','solar-pack.json']);
-await check(resolve(output,'landmarks'),files.filter(f=>f.startsWith('landmarks/')).map(f=>f.slice(10)));
+const landmarkFiles=files.filter(f=>f.startsWith('landmarks/')).map(f=>f.slice(10));
+await check(resolve(output,'landmarks'),landmarkFiles.map(f=>f.split('/')[0]));
+for(const group of landmarkGroups){
+ await check(resolve(output,'landmarks',group),landmarkFiles.filter(f=>f.startsWith(group+'/')).map(f=>f.split('/')[1]));
+}
 await check(resolve(output,'field'),files.filter(f=>f.startsWith('field/')).map(f=>f.slice(6)));
 await check(resolve(output,'pkg'),['solar_explorer.js','solar_explorer_bg.wasm','solar_explorer.js.br','solar_explorer.js.gz','solar_explorer_bg.wasm.br','solar_explorer_bg.wasm.gz','explorer-manifest.json']);
 console.log(`Packaged static WebGPU explorer: ${wasm.length} WASM bytes, commit ${commit}`);

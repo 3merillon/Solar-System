@@ -143,3 +143,33 @@ The soundtrack is synthesized in the page as it plays; it uses no samples or rec
 
 Terms, products and dates for every source: THIRD-PARTY-NOTICES.md in the source repository,
 https://github.com/3merillon/Solar-System
+
+Landmark field guide
+
+English Wikipedia contributors wrote the featured article excerpts in
+landmarks/articles/. Each record identifies the title and exact source revision.
+Open https://en.wikipedia.org/w/index.php?oldid= followed by that revision number
+for the article and its contributor history. These excerpts are licensed under
+Creative Commons Attribution-ShareAlike 4.0, https://creativecommons.org/licenses/by-sa/4.0/.
+The excerpts are shortened and converted to plain text. The Gazetteer-to-article
+identifiers come from Wikidata (CC0).
+
+Lunar rim-to-floor measurements are from Rachael Hoover, A Lunar Crater Depth
+Database for Craters >1km Diameter, https://doi.org/10.5281/zenodo.21500453
+(CC BY 4.0). The guide matches a subset to IAU names by center and diameter
+and rounds digital terrain model depths for display.
+
+Venus crater observations are adapted from Robert Herrick's Venus Crater
+Database, https://www.lpi.usra.edu/resources/vc/ (CC BY 4.0). The guide selects
+named craters and describes their radar morphology. See Herrick, Sharpton,
+Malin, Lyons and Feely (1997), "Morphology and Morphometry of Impact Craters,"
+in Venus II (University of Arizona Press). Both survey licenses are
+available at https://creativecommons.org/licenses/by/4.0/.
+
+Local map-unit identifications are based on Tanaka et al. (2014), Geologic Map
+of Mars, USGS SIM 3292, https://pubs.usgs.gov/sim/3292/, and Fortezzo et al.
+(2020), Unified Geologic Map of the Moon, USGS Astrogeology. Each lookup uses
+the Gazetteer center of a feature and the unit polygon on the regional map.
+Venus regional elevations use the USGS Magellan Global Topography v02 grid,
+with heights relative to a 6,051 km radius.
+https://astrogeology.usgs.gov/search/map/venus_magellan_global_topography_4641m

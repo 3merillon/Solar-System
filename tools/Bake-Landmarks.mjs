@@ -32,8 +32,10 @@ for(const file of readdirSync(source).filter(f=>f.endsWith('_nomenclature_center
   if(r.approval!=='Adopted by IAU'||!Number.isFinite(r.center_lat)||!Number.isFinite(r.center_lon)){skipped++;continue;}
   types[r.code]=r.type;
   const lon=((r.center_lon%360)+540)%360-180;
-  // name, latitude, east longitude (-180..180), diameter km (0 unknown), type code, gazetteer feature id, origin of the name
-  features.push([r.clean_name||r.name,+r.center_lat.toFixed(4),+lon.toFixed(4),+(r.diameter||0).toFixed(2),r.code,Number((r.link.match(/Feature\/(\d+)/)||[])[1]||0),r.origin]);
+  // Preserve the positional fields consumed by navigation. The year is the IAU
+  // naming decision, distinct from the date of discovery or formation.
+  features.push([r.clean_name||r.name,+r.center_lat.toFixed(4),+lon.toFixed(4),+(r.diameter||0).toFixed(2),r.code,Number((r.link.match(/Feature\/(\d+)/)||[])[1]||0),r.origin,
+   Number(r.approvaldt?.match(/^\d{4}/)?.[0])||0,r.quad_name||'',r.quad_code||'']);
  }
  features.sort((a,b)=>b[3]-a[3]||a[0].localeCompare(b[0]));
  writeFileSync(resolve(out,`${id}.json`),JSON.stringify({body:id,target,features}));

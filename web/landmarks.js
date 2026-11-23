@@ -2,6 +2,7 @@
 // USGS Astrogeology, public domain), baked by tools/Bake-Landmarks.mjs into landmarks/<naif>.json, largest first.
 // Positions come from the flight model (SolarFlight.surface_markers): planetocentric latitude and east longitude on the
 // body's reference sphere, the convention of its map. Relief is not considered: a label stands on that sphere.
+import {describeLandmark,landmarkNeighborhood} from './landmark-guide.js';
 const NOTE='Names: IAU Working Group for Planetary System Nomenclature, via the USGS Gazetteer of Planetary Nomenclature (public domain).';
 const km=v=>v>=100?`${Math.round(v).toLocaleString()} km`:v>=10?`${v.toFixed(0)} km`:v>0?`${v.toFixed(1)} km`:'size not given';
 // Which names to show first when not all fit. The gazetteer gives no prominence, so it is size, weighted by kind: relief and
@@ -16,30 +17,65 @@ export function installLandmarks({canvas,flight,radius,onGo=()=>{},onLand=()=>{}
  const overlay=document.createElement('canvas');overlay.id='solar-landmarks';document.body.append(overlay);
  const ink=overlay.getContext('2d');
  let index=null,enabled=true,selected=null,hits=[];const bodies=new Map(),loading=new Set();
+ const books=new Map();
+ function book(path){
+  if(!books.has(path)) books.set(path,fetch('landmarks/'+path+'.json').then(r=>{
+   if(!r.ok)throw Error(r.statusText);return r.json();
+  }).catch(()=>{books.delete(path);return null;}));
+  return books.get(path);
+ }
  try{enabled=localStorage.getItem('solar.landmarks')!=='0';}catch{}
  fetch('landmarks/index.json').then(r=>r.ok?r.json():null).then(j=>{index=j;}).catch(()=>{});
  function load(id){
   if(!index||!index.bodies.includes(id)||bodies.has(id)||loading.has(id))return;
   loading.add(id);
-  fetch(`landmarks/${id}.json`).then(r=>r.ok?r.json():null).then(j=>{
+  book(String(id)).then(j=>{
    if(!j)return;const f=j.features.sort((a,b)=>prominence(b)-prominence(a)),points=new Float64Array(f.length*2);
    for(let i=0;i<f.length;i++){points[2*i]=f[i][1];points[2*i+1]=f[i][2];}
-   bodies.set(id,{features:f,points});
+   bodies.set(id,{features:f,points,target:j.target});
   }).catch(()=>{}).finally(()=>loading.delete(id));
  }
  // The panel for a chosen feature: what the gazetteer says, and a way there.
  const panel=document.createElement('section');panel.id='solar-landmark';panel.hidden=true;
- panel.innerHTML='<div class="solar-row"><strong id="landmark-name"></strong><button id="landmark-close" title="Close">×</button></div><div class="small" id="landmark-kind"></div><p class="small" id="landmark-origin"></p><p class="small" id="landmark-link"></p><div class="solar-controls row"><button id="landmark-go" title="Go there: a short trip, ending high over it (G with it open)">Go there</button><button id="landmark-land" title="Land: a short trip down to just over the ground there (Land with it open)">Land</button></div><p class="small">'+NOTE+'</p>';
+ panel.innerHTML='<div class="solar-row"><strong id="landmark-name"></strong><button id="landmark-close" title="Close">×</button></div><div class="small" id="landmark-kind"></div><div class="small" id="landmark-description"></div><p class="small" id="landmark-origin"></p><div class="solar-controls row"><button id="landmark-go" title="Go there: a short trip, ending high over it (G with it open)">Go there</button><button id="landmark-land" title="Land: a short trip down to just over the ground there (Land with it open)">Land</button></div><p class="small" id="landmark-link"></p><p class="small">'+NOTE+'</p>';
  const $=id=>document.getElementById(id);
  function show(body,f){
   selected={body,name:f[0],lat:f[1],lon:f[2],size:f[3]};
   $('landmark-name').textContent=f[0];
   $('landmark-kind').textContent=`${index?.types?.[f[4]]??f[4]} · ${km(f[3])} · ${degrees(f[1],f[2])}`;
-  $('landmark-origin').textContent=f[6]?`Named for: ${f[6]}`:'';
-  const url=f[5]&&index?`${index.feature}${f[5]}`:'';
-  $('landmark-link').textContent=url?`Gazetteer entry: ${url}`:'';
+  const selection=selected,kind=$('landmark-kind').textContent;
+  $('landmark-origin').textContent=f[6]||'';
+  $('landmark-description').replaceChildren();$('landmark-link').replaceChildren();
   panel.hidden=false;
-  onShow(selected,$('landmark-kind').textContent,$('landmark-origin').textContent);
+  onShow(selection,kind,f[6]||'');
+  // Only fetch a body's reference texts when someone actually selects a label.
+  // A slow first lookup must never reopen a dismissed or replaced selection.
+  Promise.all([book('guide'),book('field-notes'),book('articles/'+body),
+   body===301||body===299?book('surveys/'+body):null,
+   [299,301,499].includes(body)?book('geology/'+body):null,
+   bodies.has(body)?null:book(String(body))]).then(([guide,notes,library,survey,geology,catalog])=>{
+   if(selected!==selection)return;
+   const data=bodies.get(body) || catalog;
+   if(data && !data.places && notes)data.places=landmarkNeighborhood(data.features,notes);
+   const feature=f[5]?f:data?.places?.names.get(f[0])||f;
+   const target=data?.target||'',bodyName=target==='MOON'?'the Moon':target.slice(0,1)+target.slice(1).toLowerCase();
+   const info=describeLandmark(body,feature,{guide,notes,articles:library?.articles,survey,geology,places:data?.places,radius:radius(body),bodyName});
+   $('landmark-description').replaceChildren(...info.paragraphs.map(text=>{
+    const p=document.createElement('p');p.textContent=text;return p;
+   }));
+   if(info.furtherReading){
+    const details=document.createElement('details'),label=document.createElement('summary'),excerpt=document.createElement('p');
+    label.textContent='Encyclopedia entry for '+feature[0];excerpt.textContent=info.furtherReading;
+    details.append(label,excerpt);$('landmark-description').append(details);
+   }
+   $('landmark-origin').textContent=info.naming?'Name history · '+info.naming:'';
+   const sources=$('landmark-link');
+   for(const [title,url] of info.links){
+    if(sources.childNodes.length)sources.append(' · ');
+    const a=document.createElement('a');a.href=url;a.textContent=title;a.target='_blank';a.rel='noopener noreferrer';sources.append(a);
+   }
+   onShow(selection,kind,info.summary,info.credit);
+  });
  }
  function clear(){if(selected){selected=null;panel.hidden=true;onClear();}}
  function attach(hud){hud.append(panel);$('landmark-close').onclick=clear;$('landmark-go').onclick=()=>{if(selected)onGo(selected);$('landmark-go').blur();};$('landmark-land').onclick=()=>{if(selected)onLand(selected);$('landmark-land').blur();};}

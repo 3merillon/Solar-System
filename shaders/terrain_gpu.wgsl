@@ -75,10 +75,17 @@ fn base_position(key:vec3<i32>)->Sample {
 // texels it is kept as an excess over the vertex (WATER_EXCESS_FLAG plus metres), so that while the terrain morphs
 // the water rides on it at its final depth: water never stands over ground that is still on its way down.
 var<private> field_mesh_water:f32=0.0;
-// A vertex at patch level L reads page D = L - 4 (the patch lies inside it), with no blend.
+// Distant patches sample height at their vertex spacing. Fine patches look ahead
+// into resident measurements so changing the triangle spacing does not move a coast.
+// At most half a page per patch: its four corners still cover the source keys.
+fn mesh_page_level(level:u32)->u32{
+ let spacing=f.planet.x*0.125*exp2(-f32(level));
+ let ahead=u32(spacing<=32.0)+u32(spacing<=16.0)+u32(spacing<=8.0);
+ return min(max(level+ahead,4u)-4u,u32(f.field.y));
+}
 fn measured_mesh(key:vec3<i32>,level:u32,hi:vec3<f32>,lo:vec3<f32>,spacing:f32)->vec4<f32>{
  let c=face_chart(key);let sum=vec2<u32>(c.yz+vec2<i32>(Q));let g=sum/2u;let frac=vec2<f32>(sum&vec2<u32>(1u))*0.5;let face=u32(c.x);
- let entry=page_entry(0u,face,min(max(level,4u)-4u,u32(f.field.y)),g);if entry==0u{field_mesh_water=f.planet.y;return vec4<f32>(0,0,0,field_edits(hi,lo));}
+ let entry=page_entry(0u,face,mesh_page_level(level),g);if entry==0u{field_mesh_water=f.planet.y;return vec4<f32>(0,0,0,field_edits(hi,lo));}
  let texels=page_water_texels(entry);let r=page_surface_read(entry,g,frac);
  var water=0.0;if texels{water=page_water_read(entry,face,g,frac).x;}else{water=page_water_geometry(entry,face,g);}
  // The water layer: the level carried by vertices within two texels (or two vertex spacings) of water, so a triangle
@@ -96,9 +103,9 @@ fn measured_mesh(key:vec3<i32>,level:u32,hi:vec3<f32>,lo:vec3<f32>,spacing:f32)-
 }
 // What serves this node's four corners now, six bits each: level plus one (zero: nothing yet), and whether that page is provisional, as a final one replaces it at the same level.
 // All four, because vertices on a patch's far edges read the neighbouring page when on its boundary. Read as a vertex reads them, through face_chart: on a cube edge a tie sends the read to
-// the other face, and a token on the node's own face never saw that page arrive, which left a row of the mesh on coarse heights for good, 509 m off. A patch is a sixteenth of its page, so a corner off a low edge still reads the page of its interior.
+// the other face, and a token on the node's own face never saw that page arrive, which left a row of the mesh on coarse heights for good, 509 m off. A patch is smaller than its page, so a corner off a low edge still reads the page of its interior.
 // A root is the exception: all its corners are cube corners, so on faces 2 to 5 they read neither its own page nor two of its neighbours'. Its token is which of the six root pages are up.
-fn node_served(node:u32)->u32{if terrain.nodes[node].key.y==0u{var up=0u;for(var i=0u;i<6u;i++){if page_entry(0u,i,0u,vec2<u32>(0))!=0u{up|=1u<<i;}}return up;}let d=min(max(terrain.nodes[node].key.y,4u)-4u,u32(f.field.y));var token=0u;for(var i=0u;i<4u;i++){let c=face_chart(grid_key(node,(i&1u)*GRID,(i>>1u)*GRID));let entry=page_entry(0u,u32(c.x),d,vec2<u32>(c.yz+vec2<i32>(Q))/2u);token|=select((page_entry_level(entry)+1u)|((entry>>25u)&32u),0u,entry==0u)<<(6u*i);}return token;}
+fn node_served(node:u32)->u32{if terrain.nodes[node].key.y==0u{var up=0u;for(var i=0u;i<6u;i++){if page_entry(0u,i,0u,vec2<u32>(0))!=0u{up|=1u<<i;}}return up;}let d=mesh_page_level(terrain.nodes[node].key.y);var token=0u;for(var i=0u;i<4u;i++){let c=face_chart(grid_key(node,(i&1u)*GRID,(i>>1u)*GRID));let entry=page_entry(0u,u32(c.x),d,vec2<u32>(c.yz+vec2<i32>(Q))/2u);token|=select((page_entry_level(entry)+1u)|((entry>>25u)&32u),0u,entry==0u)<<(6u*i);}return token;}
 fn radial_sample(key:vec3<i32>,level:u32)->Sample {var p=base_position(key);let spacing=f.planet.x*0.125*exp2(-f32(level));
  var field=vec4<f32>(0);if field_measured(){field=measured_mesh(key,level,p.hi.xyz,p.lo.xyz,spacing);}else{field=field_mesh(p.hi.xyz,p.lo.xyz,spacing);}let h=field.w;let grad=field.xyz;
  let n=p.normal.xyz;p.hi.w=spacing;p.lo=vec4<f32>(p.lo.xyz+n*h,h);p.normal=vec4<f32>(normalize(n-(grad-n*dot(n,grad))*f.planet.x/(f.planet.x+h)),field_mesh_water);return p;

@@ -1,7 +1,7 @@
 //! Explicit readback audits, never used by the production scheduler.
 use solar_core::{
     field,
-    pages::{direction_to_chart, page_at, MAX_PAGE_LEVEL},
+    pages::{direction_to_chart, mesh_page_level, page_at, MAX_PAGE_LEVEL},
     patches::{Cut, Patch},
     surface::SurfaceSource,
 };
@@ -97,7 +97,7 @@ pub fn inspect(
                         let (face, u, v) = direction_to_chart(p.vertex(x, y).direction());
                         page_at(
                             face,
-                            p.level.saturating_sub(4).min(u32::from(MAX_PAGE_LEVEL)) as u8,
+                            mesh_page_level(p.level, surface.spacing(p.level), MAX_PAGE_LEVEL),
                             u,
                             v,
                         )

@@ -20,8 +20,15 @@ pub const ALBEDO_GUTTER: i32 = 4;
 pub const MAX_PAGE_LEVEL: u8 = 20;
 /// Levels D0 to D3 are always resident, so a complete planet always exists.
 pub const PINNED_LEVELS: u8 = 4;
-/// A patch at level L lies inside one page at D = L - 4.
+/// At matching sample spacing, a 16-cell patch fits across a sixteenth of a height page.
 pub const PATCH_TO_PAGE: u32 = 4;
+/// Requested measured height level, shared by vertex generation and the mesh audit.
+pub fn mesh_page_level(level: u32, spacing: f64, max_level: u8) -> u8 {
+    let ahead = u32::from(spacing <= 32.0) + u32::from(spacing <= 16.0) + u32::from(spacing <= 8.0);
+    (level + ahead)
+        .saturating_sub(PATCH_TO_PAGE)
+        .min(u32::from(max_level)) as u8
+}
 /// Cells over which a page fades to a coarser neighbour.
 pub const PAGE_FADE_CELLS: f64 = 32.0;
 /// Relief kept on ground that is not water-flat, as a share of full complement amplitude.
@@ -735,9 +742,7 @@ impl SurfaceSource for PageField {
     }
     fn mesh_height(&self, n: V3, level: u32) -> f64 {
         let (face, u, v) = direction_to_chart(n);
-        let page_level = level
-            .saturating_sub(PATCH_TO_PAGE)
-            .min(u32::from(self.max_level)) as u8;
+        let page_level = mesh_page_level(level, self.spacing(level), self.max_level);
         let spacing = self.radius * 2.0 / f64::from(crate::patches::GRID << level);
         match self.read_level(face, u, v, page_level) {
             Some(read) => {
@@ -754,9 +759,7 @@ impl SurfaceSource for PageField {
     }
     fn mesh_served(&self, n: V3, level: u32) -> Option<u8> {
         let (face, u, v) = direction_to_chart(n);
-        let page_level = level
-            .saturating_sub(PATCH_TO_PAGE)
-            .min(u32::from(self.max_level)) as u8;
+        let page_level = mesh_page_level(level, self.spacing(level), self.max_level);
         self.read_level(face, u, v, page_level)
             .map(|read| read.served_level)
     }
