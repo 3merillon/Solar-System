@@ -236,8 +236,8 @@ the seed), not a song:
 | Chorale | Four parts moving chord by chord, as in a Bach chorale: sung, bowed, or on an organ with its twelfth drawn |
 | Prelude | One broken-chord figure, chord after chord; a slow upper line joins later |
 | Aria | A singing line over a murmuring bass, in clear periods |
-| Nocturne | Wide broken chords in the left hand; a tune that leans and resolves; keys a third away |
-| Berceuse | The bass never leaves the tonic; the harmony rocks between rest and leaning; the line grows finer at each return |
+| Nocturne | Harp triplets leave space for a flute line. Bowed strings take the middle section, and rubbed glass holds the common tone at a change of key. |
+| Berceuse | A tonic pedal and a rocking harp underneath a celesta tune. The flute takes the final return, with a short celesta answer. |
 | Consolation | A harp of fifths and tenths, a long tune with its twelfth for a halo, keys a third apart joined by the tone they share |
 | Elegy | The minor: low strings, a tune in the middle, a bell where each phrase begins |
 | Étude | For speed: a figure that does not stop, harmony moving by fifths |

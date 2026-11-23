@@ -353,13 +353,12 @@ export const MOODS={
   const slot=r.pick([4,4,2]);
   tonal(T,r,{bpm:r.range(46,58),beats:4,slot,tags:r.pick(['r','r','cr','rl']),fam:{fifth:.7,third:1,par:.5,semi:.15,tone:.15},regions:[1,2],phrases:slot===2?[8,11]:[5,7],intro:slot===2?4:2});T.title='Nocturne';
   buildTune(T,r,{hz:r.pick([494,523,587]),density:slot===2?1.5:2.4,app:.3,feel:'t'});
-  const voice=r.pick(['glass','piano','string','glass']),fig=r.pick(FIG.nocturne);
-  T.fx={level:1.08,ir:'hall',wet:.5,chorus:.25,tone:lerp(6000,11000,T.heat)};
-  T.layers.push({type:'bass',voice:'sub',hz:49,gain:.08,from:0,to:2});
-  T.layers.push({type:'figure',voice:'piano',...fig,open:true,reach:6,hz:r.pick([73,82,98]),ring:1.3,release:.6,gain:.14,from:0,to:2});
-  T.layers.push({type:'pad',voice:'string',size:3,hz:294,gain:.055,drift:2,need:.3,from:T.mark.B,to:T.mark.coda});
-  T.layers.push({type:'melody',voice,gain:voice==='piano'?.32:voice==='string'?.2:.15,attack:voice==='piano'?undefined:.08,release:voice==='piano'?1.2:1.6,shim:.35,quint:r.chance(.4)?.08:0,octave:T.mark.R,from:T.mark.first,to:T.mark.coda});
-  T.layers.push({type:'thread',voice:'glass',hz:587,gain:.11,lead:1.5,hold:2,from:0,to:2});
+  T.fx={level:1.12,ir:'hall',wet:.43,chorus:0,tone:lerp(6200,9500,T.heat)};
+  // An ascending harp question leaves the last triplet open for the singer.
+  T.layers.push({type:'figure',voice:'harp',div:3,pattern:[0,1,3,4,null,2,0,2,null,3,2,null],open:true,reach:5,hz:98,ring:1.25,release:.45,gain:.24,spread:.28,from:0,to:2});
+  T.layers.push({type:'melody',voice:'flute',gain:.16,attack:.075,release:.28,legato:.98,sect:['A','R'],from:T.mark.first,to:2});
+  T.layers.push({type:'melody',voice:'string',gain:.16,attack:.17,release:.48,legato:.96,sect:['B'],from:0,to:2});
+  T.layers.push({type:'thread',voice:'glass',hz:494,gain:.08,lead:1,hold:1,release:.55,shim:0,from:0,to:2});
  },
  // A cradle song: the bass never leaves the tonic, the harmony rocks between rest and leaning, and the line above
  // grows finer with each return (Chopin's Berceuse).
@@ -372,11 +371,14 @@ export const MOODS={
   };
   tonal(T,r,{bpm:r.range(40,48),beats:2,slot:2,phrases:[6,9],regions:[0,0],script,dark:-.25});T.title='Berceuse';
   buildTune(T,r,{hz:r.pick([587,659,698]),density:(pi)=>Math.min(4.2,1.3+pi*.55),app:.2,feel:'t',vary:true,skip:(ph,pi)=>pi===0});
-  const voice=r.pick(['glass','bell','piano']);
-  T.fx={level:1.17,ir:'hall',wet:.5,chorus:.25,tone:lerp(6500,11000,T.heat)};
-  T.layers.push({type:'bass',voice:'sub',hz:49,gain:.09,from:0,to:2});
-  T.layers.push({type:'figure',voice:'piano',...FIG.rock,open:true,reach:5,hz:r.pick([73,82,98]),ring:1.2,release:.7,gain:.14,from:0,to:2});
-  T.layers.push({type:'melody',voice,gain:voice==='glass'?.14:voice==='bell'?.26:.28,attack:voice==='glass'?.06:undefined,release:1.5,ratio:2,shim:.4,from:0,to:2});
+  T.fx={level:1.14,ir:'hall',wet:.40,chorus:0,tone:lerp(5500,8200,T.heat)};
+  // The cradle has two answers: a low open string on one, a pair of high
+  // plucks across two. Only the settled return fills the intervening rest.
+  T.layers.push({type:'bass',voice:'sub',hz:55,gain:.066,from:0,to:2});
+  T.layers.push({type:'figure',voice:'harp',div:3,pattern:[0,null,2,3,null,1],open:true,reach:4,hz:131,ring:1.15,release:.38,gain:.20,from:0,to:2});
+  T.layers.push({type:'melody',voice:'celesta',gain:.19,release:.38,legato:.96,from:0,to:T.mark.R});
+  T.layers.push({type:'melody',voice:'flute',gain:.14,attack:.10,release:.35,legato:1,from:T.mark.R,to:2});
+  T.layers.push({type:'figure',voice:'celesta',div:3,pattern:[null,null,null,null,2,null],open:true,reach:4,hz:330,ring:.48,release:.3,gain:.095,from:T.mark.R,to:T.mark.coda});
  },
  // Liszt consoling: a harp of pure fifths and tenths, a long tune with its twelfth for a halo, keys a third apart
  // joined by the one tone they share.

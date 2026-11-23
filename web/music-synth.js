@@ -17,6 +17,8 @@ export function shared(ac){
  const ceiling=new Float32Array(1025);for(let i=0;i<1025;i++){const v=i/512-1,a=Math.abs(v);ceiling[i]=Math.sign(v)*(a<.7?a:.7+.3*Math.tanh((a-.7)/.3)/Math.tanh(1));}
  S={noise,bell,fadeIn,fadeOut,drive,ceiling,waves:{
   // Every harmonic, falling gently: a voice before the mouth shapes it (the octave world: every partial has its octave).
+  flute:wave(n=>[1,.20,.085,.042,.015][n-1]||0),
+  harp:wave(n=>Math.sin(n*Math.PI*.22)/(n*n)),
   glottal:wave(n=>1/n**1.15),
   warm:wave(n=>1/n**1.6),
   soft:wave(n=>1/n**2.1),
@@ -248,6 +250,23 @@ const VOICES={
   return end;
  },
  // A felt piano: soft hammer, quick fall, long quiet ring, darker as it fades.
+ harp(ac,S,R,e,t,amp){
+  const end=gate(amp.gain,t,e.d,e.g,.009,1.3,.17,e.r??.42);
+  const filter=lowpass(ac,Math.min(10500,e.f*12));
+  filter.frequency.exponentialRampToValueAtTime(Math.min(4200,e.f*3.5),t+Math.min(.55,e.d));
+  osc(ac,S.waves.harp,e.f,t,end).connect(filter);filter.connect(amp);return end;
+ },
+ flute(ac,S,R,e,t,amp){
+  const end=swell(amp.gain,t,e.d,e.g,e.a??.09,e.r??.32);
+  osc(ac,S.waves.flute,e.f,t,end).connect(amp);return end;
+ },
+ celesta(ac,S,R,e,t,amp){
+  const end=gate(amp.gain,t,e.d,e.g,.006,.55,.16,e.r??.35);
+  osc(ac,'sine',e.f,t,end).connect(amp);
+  const upper=ac.createGain(),life=Math.min(.34,end-t-.006);
+  strike(upper.gain,t,.36,.004,Math.max(.005,life));
+  osc(ac,'sine',4*e.f,t,Math.min(end,t+.004+life)).connect(upper);upper.connect(amp);return end;
+ },
  piano(ac,S,R,e,t,amp){
   const hold=Math.max(e.d,.05),ringing=clamp(2.5*(220/e.f)**.35,.8,5),r=e.r??.5,end=gate(amp.gain,t,hold,e.g*.6,.006,ringing,.12,r),top=clamp(e.f*7,500,7000),f=lowpass(ac,top,.5);
   f.frequency.setValueAtTime(top,t);f.frequency.exponentialRampToValueAtTime(clamp(e.f*2.2,300,3000),t+.7);
@@ -310,7 +329,7 @@ const VOICES={
  },
 };
 // What a voice costs against the budget (roughly its oscillators).
-const COST={partial:1,sub:1,pad:2,choir:1,glass:1,string:2,bell:1.5,gong:4,piano:2,pluck:1,bass:1.5,lead:2.5,kick:.7,snare:1.2,clap:.8,hat:.6,tom:.7,metal:1.5,glide:1,cloud:1,wind:1};
+const COST={flute:1,harp:1,celesta:1.5,partial:1,sub:1,pad:2,choir:1,glass:1,string:2,bell:1.5,gong:4,piano:2,pluck:1,bass:1.5,lead:2.5,kick:.7,snare:1.2,clap:.8,hat:.6,tom:.7,metal:1.5,glide:1,cloud:1,wind:1};
 // In the light profile the pad and the lead have two oscillators, not three.
 const LIGHT_COST={pad:1.5,lead:1.8};
 export const voiceCost=(e,lite)=>(lite&&LIGHT_COST[e.v])||COST[e.v]||1;

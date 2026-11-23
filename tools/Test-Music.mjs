@@ -194,9 +194,9 @@ section('Written out as RMT modules');
   for(let bar=s*2;bar<s*2+6;bar++)for(const e of composeBar(T,bar,.5))if(e.q&&e.at!==undefined&&!UNPITCHED.has(e.v)){want.push(String(e.q));when.push([String(e.q),((bar-s*2)*T.bar+e.t)/T.beat]);}
   const got=[];let seen=0;
   for(const n of M.notes){
-   for(const x of [n.startTime,n.duration,n.frequency])for(const m of x.matchAll(/\[(\d+)\]/g))if(+m[1]>=n.id)forward++;
+   for(const x of [n.startTime,n.duration,n.frequency].filter(Boolean))for(const m of x.matchAll(/\[(\d+)\]/g))if(+m[1]>=n.id)forward++;
    if(n.id<=seen)forward++;seen=n.id;
-   const v={t:R.evaluate(n.startTime,values,beat),d:R.evaluate(n.duration,values,beat),f:R.evaluate(n.frequency,values,beat)};values.set(n.id,v);
+   const v={t:R.evaluate(n.startTime,values,beat),d:n.duration?R.evaluate(n.duration,values,beat):q(0),f:R.evaluate(n.frequency,values,beat)};values.set(n.id,v);if(!n.duration)continue;
    if(/^\[\d+\]\.f/.test(n.frequency))chained++;
    // Starts are seconds in the module (beats times the beat); back to beats, beside the pitch.
    {const key=String(v.f.div(base));if(!heard.has(key))heard.set(key,[]);heard.get(key).push(v.t.div(beat).value);}
