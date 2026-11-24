@@ -76,12 +76,17 @@ export function installPlanetIndicators({canvas,id="solar-overlay",onSelect=()=>
    hits.push({...hit,box});
   }
  }
- // A click on a marker makes it the target.
- canvas.addEventListener('pointerdown',e=>{
-  if(e.button!==0)return;const rect=canvas.getBoundingClientRect(),dpr=devicePixelRatio||1,x=(e.clientX-rect.left)*dpr,y=(e.clientY-rect.top)*dpr;
+ // The marker under a pointer event, if any.
+ function hitAt(e){
+  const rect=canvas.getBoundingClientRect(),dpr=devicePixelRatio||1,x=(e.clientX-rect.left)*dpr,y=(e.clientY-rect.top)*dpr;
   let best=hits.find(({box})=>box&&x>=box[0]&&x<=box[0]+box[2]&&y>=box[1]&&y<=box[1]+box[3]);
   if(!best){let reach=22*dpr,disc;for(const h of hits){const d=Math.hypot(h.x-x,h.y-y);if(d<reach){reach=d;best=h;}if(d<h.r&&(!disc||h.d<disc.d))disc=h;}best??=disc;}
+  return best??null;
+ }
+ // A click on a marker makes it the target.
+ canvas.addEventListener('pointerdown',e=>{
+  if(e.button!==0)return;const best=hitAt(e);
   if(best){onSelect(best.id);}
  });
- return {draw};
+ return {draw,hitAt};
 }

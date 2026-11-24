@@ -19,6 +19,12 @@ try{
  for(let i=0;i<50&&!await b.evaluate("document.querySelector('#selection-entry p').textContent.length>0");i++)await wait(80);
  const selection=()=>b.evaluate(`(()=>{const e=document.querySelector('#selection-entry'),r=e.getBoundingClientRect(),g=document.querySelector('#hud-go'),p=g.getBoundingClientRect();return {name:e.firstChild.textContent,text:e.textContent,clickThrough:document.elementFromPoint(r.left+r.width/2,r.top+r.height/2)?.id==='world',closed:document.querySelector('#toggle-ui').getAttribute('aria-expanded')==='false',canGo:!g.disabled,go:[p.left+p.width/2,p.top+p.height/2]};})()`);
  let state=await selection();assert.equal(state.name.toUpperCase(),planet.t);assert.ok(state.closed&&state.canGo&&state.clickThrough,JSON.stringify(state));assert.ok(await b.evaluate("document.querySelector('#selection-entry p').textContent.length>15"));
+ // A click on empty sky, away from every label, drops the selection and its entry; a click back on the label restores it.
+ // (A click on a body's disc is not empty: it selects that body.)
+ const empty=await b.evaluate(`(()=>{draw();for(let y=60;y<680;y+=20)for(let x=20;x<980;x+=20)if(document.elementFromPoint(x,y)?.id==='world'&&labels.every(p=>Math.hypot(p.x-x,p.y-y)>90))return [x,y];})()`);
+ assert.ok(empty,'some empty sky to click');await click(...empty);
+ assert.ok(await b.evaluate(`document.querySelector('#selection-entry').hidden&&document.querySelector('#hud-go').disabled&&document.querySelector('#solar-target').value==='0'`),'a click on nothing clears the selection');
+ await click(planet.x,planet.y);state=await selection();assert.equal(state.name.toUpperCase(),planet.t);assert.ok(state.canGo,JSON.stringify(state));
  await click(...state.go);assert.equal(await b.evaluate('solarFlight.flight.trip_state()[0]'),1);
  await b.evaluate('solarFlight.flight.stop_trip();solarFlight.flight.jump_orbit(499);solarFlight.flight.go_over(499,18.65,226.2,900000);for(let i=0;i<360;i++)solarFlight.flight.step(1/60,new Float64Array(10));draw()');
  let place;

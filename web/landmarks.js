@@ -119,11 +119,14 @@ export function installLandmarks({canvas,flight,radius,onGo=()=>{},onLand=()=>{}
   }
  }
  // A click on a label or its point opens the feature's entry.
+ function hitAt(e){
+  if(!enabled)return null;const rect=canvas.getBoundingClientRect(),dpr=devicePixelRatio||1,x=(e.clientX-rect.left)*dpr,y=(e.clientY-rect.top)*dpr;
+  return hits.find(h=>(x>=h.box[0]&&x<=h.box[0]+h.box[2]&&y>=h.box[1]&&y<=h.box[1]+h.box[3])||Math.hypot(h.x-x,h.y-y)<8*dpr)??null;
+ }
  canvas.addEventListener('pointerdown',e=>{
-  if(e.button!==0||!enabled)return;const rect=canvas.getBoundingClientRect(),dpr=devicePixelRatio||1,x=(e.clientX-rect.left)*dpr,y=(e.clientY-rect.top)*dpr;
-  const hit=hits.find(h=>(x>=h.box[0]&&x<=h.box[0]+h.box[2]&&y>=h.box[1]&&y<=h.box[1]+h.box[3])||Math.hypot(h.x-x,h.y-y)<8*dpr);
+  if(e.button!==0)return;const hit=hitAt(e);
   if(hit)show(lastBody,hit.f);
  });
  let lastBody=0;
- return {attach,show,clear,get selected(){return panel.hidden?null:selected;},draw:o=>{lastBody=o.body;draw(o);},get enabled(){return enabled;},set enabled(v){enabled=!!v;try{localStorage.setItem('solar.landmarks',enabled?'1':'0');}catch{}if(!enabled){ink.clearRect(0,0,overlay.width,overlay.height);hits=[];}}};
+ return {attach,show,clear,hitAt,get selected(){return panel.hidden?null:selected;},draw:o=>{lastBody=o.body;draw(o);},get enabled(){return enabled;},set enabled(v){enabled=!!v;try{localStorage.setItem('solar.landmarks',enabled?'1':'0');}catch{}if(!enabled){ink.clearRect(0,0,overlay.width,overlay.height);hits=[];}}};
 }

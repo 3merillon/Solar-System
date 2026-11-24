@@ -307,6 +307,14 @@ $('solar-look').onclick=look;$('solar-fly').onclick=fly;$('solar-stop').onclick=
  // Named features of the nearest body: Go there sets the craft over it, looking straight down, high enough to see it whole.
  landmarks=installLandmarks({canvas,flight,radius:id=>SolarFlight.body_radius(id),onGo:s=>goOver(s),onLand:s=>landAt(s),
   onShow:(s,kind,description,credit)=>{select.value='0';syncGo();showEntry(s.name,nameOf(s.body)+' · '+kind,description,credit);},onClear:()=>{entry.hidden=true;syncGo();}});
+ // A tap or click on nothing (no marker, no landmark) drops the selection and its entry. A drag that looks around, a second
+ // finger (twist) or a press held long is not a tap. Whether it hit is decided at the press, against what was drawn then.
+ {let tap=null;const fingers=new Set();
+  canvas.addEventListener('pointerdown',e=>{fingers.add(e.pointerId);tap=e.button===0&&fingers.size===1&&!indicators.hitAt(e)&&!landmarks.hitAt(e)?{id:e.pointerId,x:e.clientX,y:e.clientY,t:performance.now()}:null;});
+  canvas.addEventListener('pointermove',e=>{if(tap&&e.pointerId===tap.id&&Math.hypot(e.clientX-tap.x,e.clientY-tap.y)>8)tap=null;});
+  canvas.addEventListener('pointerup',e=>{fingers.delete(e.pointerId);if(!tap||e.pointerId!==tap.id)return;const t=tap;tap=null;
+   if(performance.now()-t.t<500&&Math.hypot(e.clientX-t.x,e.clientY-t.y)<=8&&(target()||landmarks.selected))setTarget(0);});
+  canvas.addEventListener('pointercancel',e=>{fingers.delete(e.pointerId);tap=null;});}
  landmarks.attach(hud);hud.insertBefore($('solar-landmark'),$('solar-display-title'));
  $('solar-landmarks-on').checked=landmarks.enabled;$('solar-landmarks-on').onchange=()=>{landmarks.enabled=$('solar-landmarks-on').checked;$('solar-landmarks-on').blur();};
  window.addEventListener('keydown',e=>{if(!forGame(e)||e.repeat||e.code!=='KeyN')return;landmarks.enabled=!landmarks.enabled;$('solar-landmarks-on').checked=landmarks.enabled;});
