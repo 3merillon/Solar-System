@@ -8,3 +8,4 @@
 /web/pack
 /rebake-sources/
 /node_modules/
+/package-lock.json
