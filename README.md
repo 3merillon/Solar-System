@@ -145,6 +145,7 @@ cd Solar-System
 ./tools/Run.ps1 -NoBuild     # serve the last build
 ./tools/Build-Explorer.ps1   # build only
 node tools/serve.mjs --port 5199   # serve web/ on another port
+npm run dev                  # Run.ps1 from any shell (cmd, Git Bash); `npm run dev -- -NoBuild` to skip the build
 ```
 
 The first build compiles everything and takes a few minutes (244 s from a clean clone on the

@@ -1,0 +1,10 @@
+{
+  "name": "solar-system",
+  "private": true,
+  "description": "Scripts only; the project has no npm dependencies.",
+  "scripts": {
+    "dev": "node tools/dev.mjs dev",
+    "build": "node tools/dev.mjs build",
+    "serve": "node tools/serve.mjs"
+  }
+}
