@@ -90,7 +90,8 @@ and is shown in the app when the body is in view.
 | Triton | Voyager 2 colour mosaic 600 m (gaps filled by its makers) | Voyager 2, NASA/JPL, USGS Astrogeology |
 | Pluto, Charon | New Horizons global mosaics and elevation 300 m (July 2017) | New Horizons, NASA/JHUAPL/SwRI, NASA/JPL, USGS Astrogeology |
 | Jupiter | NASA Photojournal PIA07782, "Cassini's Best Maps of Jupiter (Cylindrical Map)", from Cassini's flyby of December 2000: the JPEG, identified by reproducing the published map byte for byte | NASA/JPL/Space Science Institute |
-| Saturn, Uranus, Neptune | No data: colour by latitude, synthesized (`solar-bake schematic`); the app says so | none |
+| Saturn | HST WFC3/UVIS, OPAL Cycle 30, rotation B on 22 October 2023. Derived visible-colour map from F631N, F502N and F395N. Interpolated ring-obscured latitudes and southern polar cap. [Data and processing notes](https://archive.stsci.edu/hlsp/opal/opal-saturn-cycle-30) | NASA/ESA HST, OPAL (PI A. Simon), STScI operated by AURA under NASA contract NAS 5-26555. [OPAL DOI](https://doi.org/10.17909/T9G593) |
+| Uranus, Neptune | Synthetic colour by latitude and modelled cloud structure | none |
 | Sky | NASA SVS Deep Star Maps 2020 (svs.gsfc.nasa.gov/4851), the 8192 x 4096 map `starmap_2020_8k.exr` | NASA/Goddard Space Flight Center Scientific Visualization Studio. Gaia DR2: ESA/Gaia/DPAC |
 | Bright stars | Yale Bright Star Catalogue, 5th revised edition (Hoffleit and Warren, 1991): the 906 stars brighter than magnitude 4.5 | See the note below |
 | Asteroids | JPL Small-Body Database (query API): orbital elements and absolute magnitudes of the numbered bodies, as one query answered on 31 October 2026 (the query is in `tools/rebake.json`) | NASA/JPL-Caltech, Solar System Dynamics |

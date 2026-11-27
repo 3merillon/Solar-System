@@ -8,6 +8,7 @@ import {headless} from './Headless.mjs';
 import {ready,runFrames,capture} from './Explorer-Test-Lib.mjs';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {execFileSync} from 'node:child_process';
+import {giantShot} from './Giant-Flight.mjs';
 const arg=(k,d)=>{const i=process.argv.indexOf('--'+k);return i<0?d:process.argv[i+1];};
 const dir=arg('output','evidence/local/frame-cost-2026-11-14/flight'),base=arg('base','http://127.0.0.1:5198/'),seconds=+arg('seconds',12);
 const profiling=arg('profiling','1')!=='0',quality=arg('quality','high'),shots=arg('captures','1')!=='0';
@@ -18,6 +19,11 @@ const q=a=>{a=a.filter(Number.isFinite).sort((x,y)=>x-y);const v=p=>a[Math.max(0
 // run sees the same sun and the solar clock still turns it (the sun-drift case).
 const NOON="const f=solarFlight;f.setTime(Date.parse('2026-06-21T11:00:00Z')/1000-946727935.816+5);f.setRate(1);";
 const setups={
+ 'saturn-wide':{prep:giantShot(699,0),keys:[]},
+ 'saturn-shadow':{prep:giantShot(699,.67),keys:[]},
+ 'saturn-immersed':{prep:giantShot(699,.93),keys:[]},
+ 'saturn-flyby':{prep:giantShot(699,0),flyby:true,keys:[]},
+ 'jupiter-skim':{prep:giantShot(599,.72),keys:[]},
  // Named destinations of the page (engine.bookmark): a view along the ground toward the horizon.
  'earth-hover':{prep:NOON+"solarFlight.goEarth('lavaux');",keys:[]},
  // The same view with the solar clock stopped: no sun drift, so what the sun's motion costs.
@@ -42,6 +48,7 @@ const record=(s,secs)=>`(async()=>{const script=${JSON.stringify(s.keys)},rows=[
  ${s.speed?`{const e=document.getElementById('speed');e.value=String(Math.log10(${s.speed}));e.dispatchEvent(new Event('input'));}`:''}
  solarExplorer.telemetry();solarExplorer.paused=false;
  await new Promise(done=>{function tick(now){const t=(now-t0)/1000;while(k<script.length&&t>=script[k][0]){solarExplorer.keys.clear();for(const c of script[k++][1])solarExplorer.keys.add(c);}
+  ${s.flyby?'window.giantFlight(Math.min(1,t/'+secs+'));':''}
   const st=solarExplorer.stats(),g=solarExplorer.telemetry(),r=solarFlight.flight.report();
   rows.push({t,raf:last===null?null:now-last,gpu:g.map(x=>x.gpu_span_ms).filter(Number.isFinite),marks:g.map(x=>x.marks).filter(m=>m&&m.length),worker:st.worker_frame_cpu_ms,pending:st.pending,shown:st.solar?.surface_shown,near:r[1],clear:r[2],speed:r[3],eye:solarExplorer.camera?.[0]});
   last=now;if(t<${secs})requestAnimationFrame(tick);else done();}requestAnimationFrame(tick);});
@@ -53,11 +60,13 @@ try{
  await b.send('Page.addScriptToEvaluateOnNewDocument',{source:`window.perfLong=[];new PerformanceObserver(l=>{for(const e of l.getEntries())if(perfLong.length<4096)perfLong.push({start:e.startTime,duration:e.duration});}).observe({type:'longtask',buffered:true});`});
  for(const name of scenes){
   const s=setups[name];const started=performance.now();
-  await b.send('Page.navigate',{url:new URL('index.html',base).href+`?test=1&vehicle=0&quality=${quality}`});await ready(b); // vehicle=0: older snapshots still carry the car; newer builds ignore it
+  const giant=name.startsWith('saturn-')?699:name.startsWith('jupiter-')?599:0;
+  await b.send('Page.navigate',{url:new URL('index.html',base).href+`?test=1&vehicle=0&quality=${quality}`+(giant?`&body=solar&at=${giant}`:'')});await ready(b); // vehicle=0: older snapshots still carry the car; newer builds ignore it
   await b.evaluate(`solarExplorer.resize(1920,1080);solarExplorer.engine.profiling(${profiling});solarExplorer.engine.frame_queue_depth(2)`);
   await runFrames(b,60);if(patch)await b.evaluate(`solarExplorer.configure(${patch})`);await b.evaluate(s.prep);
   // Settle: let the surface and its programs arrive before the clock starts (warm-up is reported separately).
-  for(let i=0;i<60;i++){await runFrames(b,10);if(await b.evaluate(`(()=>{const s=solarExplorer.stats();return s.solar?.surface_shown!==false&&!(s.pending_samples>0);})()`))break;}
+  if(giant)await runFrames(b,60,'solarExplorer.camera=solarFlight.frame(0,new Set(),0);');
+  else for(let i=0;i<60;i++){await runFrames(b,10);if(await b.evaluate(`(()=>{const s=solarExplorer.stats();return s.solar?.surface_shown!==false&&!(s.pending_samples>0);})()`))break;}
   const ready_s=(performance.now()-started)/1000;
   const run=await b.evaluate(record(s,seconds));
   const r=run.rows,raf=r.map(x=>x.raf).filter(Number.isFinite),warm=r.filter(x=>x.t>=2);

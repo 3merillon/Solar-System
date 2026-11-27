@@ -47,9 +47,9 @@ const products = recipe.products.map(p => {
   if (p.kind === 'body') p = {...p, version: PACK_VERSION[p.name] || 1, folder: packFolder(p.name).slice(0, -1)};
   const files = p.kind === 'body' ? [`${p.folder}/`, mapFile(p.name)]
     : p.kind === 'earth' ? ['pack-earth-v1/'] : p.kind === 'sky' ? ['solar/sky-'] : [p.output];
-  const reads = [p.image, p.height, p.etopo, p.marble, p.jpeg, p.exr, p.stars, p.input, ...(p.kind === 'solar' ? p.kernels : [])].filter(Boolean);
+  const reads = [p.image, p.height, p.etopo, p.marble, p.jpeg, p.exr, p.stars, p.input, ...(p.inputs || []), ...(p.kind === 'solar' ? p.kernels : [])].filter(Boolean);
   for (const s of reads) if (!recipe.sources[s]) throw Error(`${p.id}: no source ${s} in tools/rebake.json`);
-  const expected = published.filter(f => files.some(x => x.endsWith('/') || x.endsWith('-') ? f.path.startsWith(x) : f.path === x));
+  const expected = p.bundled ? [{path:p.output, bytes:p.bundled.bytes, sha256:p.bundled.sha256}] : published.filter(f => files.some(x => x.endsWith('/') || x.endsWith('-') ? f.path.startsWith(x) : f.path === x));
   return {...p, reads, expected, outputs: files, bytes: expected.reduce((a, f) => a + f.bytes, 0)};
 });
 const sourceBytes = p => p.reads.reduce((a, s) => a + (recipe.sources[s].bytes || 0), 0);
@@ -265,7 +265,7 @@ for (const p of todo) {
   } else if (p.kind === 'map') await run(baker, ['map', '--jpeg', src(p.jpeg), '--map', join(tmp, p.output)]);
   else if (p.kind === 'schematic') await run(baker, ['schematic', '--name', p.name, '--map', join(tmp, p.output)]);
   else if (p.kind === 'sky') await run(baker, ['sky', '--exr', src(p.exr), '--stars', src(p.stars), '--out', join(tmp, 'solar')]);
-  else if (p.kind === 'node') await run(process.execPath, [join(here, p.script), src(p.input), join(tmp, p.output), ...flags(p.options)]);
+  else if (p.kind === 'node') await run(process.execPath, [join(here, p.script), ...(p.inputs || [p.input]).map(src), join(tmp, p.output), ...flags(p.options)]);
   else if (p.kind === 'copy') await copyFile(join(repo, p.from), join(tmp, p.output));
   else if (p.kind === 'solar') {
     // Every kernel sits in one folder, as the baker expects; it writes its fit errors beside the table (solar-v1.log.json).

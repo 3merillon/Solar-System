@@ -37,6 +37,8 @@ pub struct Options {
     pub source_count: usize,
     /// Adapt the frame's exposure to its light (finish.wgsl `exposure_meter`); `dt`: this frame's time step, seconds.
     pub auto_exposure: bool,
+    pub photographic: bool,
+    pub daylight: f32,
     pub dt: f32,
 }
 struct Level {
@@ -363,7 +365,7 @@ impl Finish {
             0,
             bytemuck::bytes_of(&Uniform {
                 tone: [
-                    options.exposure,
+                    options.exposure * options.daylight,
                     if bloom { BLOOM_SHARE } else { 0.0 },
                     1.0 / bloom_count as f32,
                     0.0,
@@ -378,8 +380,8 @@ impl Finish {
                 meter: [
                     if auto { 1.0 } else { 0.0 },
                     1.0 - (-options.dt.clamp(0.0, 0.5) / ADAPT_SECONDS).exp(),
-                    0.0,
-                    0.0,
+                    f32::from(options.photographic as u8),
+                    options.daylight,
                 ],
             }),
         );

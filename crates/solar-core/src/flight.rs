@@ -304,6 +304,15 @@ fn apparent(system: &System, id: i32, frame: i32, t: SimTime, rate: f64) -> (V3,
     let (p, v) = system.ephemeris.relative_state(id, frame, t);
     (p, mul(v, rate))
 }
+/// One-bar figure in this direction for the giants, reference sphere elsewhere.
+pub fn flight_radius(system: &System, id: i32, direction: V3, t: SimTime) -> f64 {
+    if matches!(id, 599 | 699 | 799 | 899) {
+        system.figure_radius(id, direction, t)
+    } else {
+        system.radius(id)
+    }
+}
+
 /// Nearest surface among the frame's body, its parent and its children.
 fn nearest_body(system: &System, craft: &Craft, t: SimTime, rate: f64) -> (i32, V3, V3, f64) {
     let e = &system.ephemeris;
@@ -316,7 +325,7 @@ fn nearest_body(system: &System, craft: &Craft, t: SimTime, rate: f64) -> (i32, 
     let mut consider = |id: i32| {
         let (p, v) = apparent(system, id, craft.frame, t, rate);
         let offset = craft.position.minus(p);
-        let clearance = length(offset) - system.radius(id);
+        let clearance = length(offset) - flight_radius(system, id, offset, t);
         if clearance < best.3 {
             best = (id, offset, sub(craft.velocity, v), clearance);
         }

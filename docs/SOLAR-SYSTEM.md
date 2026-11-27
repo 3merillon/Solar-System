@@ -144,7 +144,11 @@ its cloud deck is not modelled.
 
 **Refinement on every body: the owner's decision, 31 October 2026.** This reverses my first choice of no synthesized detail off Earth, which left the Moon smooth up close. Synthesis fills only what the data does not resolve, as on Earth: heights in the complement bands, the same one field for mesh, shadows and the f64 reader, and ground in the material, for shading alone. Each body has a kind of ground (`body::Ground`): regolith with a power law of mostly worn small craters, dust with rock on steep ground, or ice with fractures across all of it. **All of this is synthesized, and could be taken for discovery**, so the display says so for the body in view, and the Ground detail switch turns it off. Bodies with no height data get relief from this alone (`NO_HEIGHTS_RELIEF`), and the display says that too. These are appearance choices, not checked against images of each body.
 
-**Provenance.** Venus's map is radar brightness, and the display and the pack's manifest say so. Saturn, Uranus and Neptune have only a colour by latitude from `solar-bake schematic`, because no free global map was found: **these three are not measurements**. Saturn's ring boundaries and rough optical depths are published values, and its fine ringlets are synthesized.
+**Provenance.** Venus's map is radar brightness, and the display and the pack's manifest say so. Saturn samples an October 2023 HST OPAL map. Uranus and Neptune use synthetic colours by latitude. The three-dimensional cloud structures on all four giant planets are modelled. Saturn's ring boundaries and rough optical depths are published values, and its fine ringlets are synthesized.
+
+**Stellar close-ups.** Visible light is the default. At the near limb, an exponential continuum opacity and a source function derived from the stellar limb coefficients produce a finite photosphere. Granules move in a single evolving network at the star’s own pressure-scale length. Sub-granular detail has a finite smallest scale. Eclipse-scale chromospheric and coronal light is kept faint in this mode. The filtered composite remains selectable. [Solar observations](https://nso.edu/press-release/new-images-released-by-nsfs-inouye-solar-telescope/) · [NASA eclipse observations](https://science.nasa.gov/eclipses/future-eclipses/eclipse-2024/what-to-expect/)
+
+**Giant atmospheres.** A view ray crosses an oblate haze layer, detached cloud heads and a deep opaque deck. The measured orbital map sets colour and constrains the deck height. A periodic 3D density field supplies smaller features in rotating body coordinates. Each lit sample tests ring transmission across the apparent solar disk and samples nearby clouds along the sunlight path. Diffuse fill approximates multiple scattering. High and Ultra integrate at native resolution. Ultra takes additional samples along grazing paths. Medium and lower presets can reconstruct the largest nearby atmosphere at the preset’s cloud scale. All presets draw the rings at the scene resolution. The flight controller measures radial altitude against the same oblate one-bar figure. [GPU implementation](../shaders/space.wgsl)
 
 Faults the owner found on the Moon, and what they were: a flat grey band above the horizon was the impostor showing where terrain lies lower than the reference radius, so it now sits below all terrain. A body with no sea still had sea level at height zero, which darkened every contour through it as a wet shore: it now has no level. Shadows had a blue cast, from Earth's sky light. Pure black shadows now have a small ambient, chosen by eye. A hard dark trapezoid seen once in a shadow, soon after a jump, did not come back: it may be stale shadow maps after a jump, and is **not understood**.
 
@@ -432,7 +436,7 @@ captures of this rework and real SDO images from 16 November 2026 for comparison
   angle over the disk's angular radius, right only from far away; at 1.1 radii it overstated the footprint about tenfold, at 1.01
   radii a hundredfold, so cells never spanned the pixels the fade asks for. Now the footprint is the distance to the hit point
   times the pixel's angle. Granules show from about 1.2 radii in.
-- **Two views** (Display, Stars). Familiar, the default (owner's choice): the disk as filtered pictures show it (an orange to
+- **Two views** (Display, Stars). The optional filtered composite: the disk as filtered pictures show it (an orange to
   gold ramp on brightness, in the manner of SDO/HMI continuum and solar-filter photographs), the chromosphere and prominences in
   H-alpha red, coronal loops in 171 Å gold, the corona compressed as eclipse pictures are (half the disk centre's light at 1.05
   radii, the 0.85 power of its brightness beyond) and not drawn over the disk; the panel says it is false colour. True colour: as
@@ -451,10 +455,8 @@ captures of this rework and real SDO images from 16 November 2026 for comparison
   noise that fades under a pixel. Not checked against a primary source: sizes are commonly quoted ones.
 - **Active regions** drive the spots, plage, loops, filaments and flares: up to 12 seeded slots (7 times the star's activity),
   each a region living 20 to 60 days in the active latitudes (5 to 35 degrees), a bipolar pair tilted by a Joy's-law-like rule
-  (half the latitude: a choice, not a fit), leader toward the equator. Spots: an irregular umbra (three harmonics), a penumbra of
-  radial filaments (18 to 90 round the spot, averaged out under two pixels apart), a light bridge in a quarter of them, the umbra
-  shifted toward the disk centre near the limb (the Wilson depression, by a quarter of the radius times the sine of the view angle,
-  a choice); the umbra 25% and penumbra 80% on average (Solanki 2003). A leader, a follower and three pores per region. Plage round
+  (half the latitude: a choice, not a fit), leader toward the equator. Each group has a leader, a follower, a fragment and five pores.
+  The umbra and its lighter filamentary penumbra form through the depth-dependent emission and opacity described below. Plage round
   each, brighter toward the limb. They turn with the star; differential rotation is not modelled.
 - **Prominences** are thin sheets in planes through the star's centre, found by intersecting the ray: one along each region's line
   between its polarities, three quiescent ones at 40 to 60 degrees; a ragged arched top, threads about 2 Mm apart that average out
@@ -538,17 +540,9 @@ the rest of the synthetic surface; none of it is today's Sun. Nothing here is ne
 
 - **Noise.** The star's smooth noise was a value noise, whose lattice showed wherever it was stretched: that was the grid in
   the corona. It is a gradient noise with a quintic blend now. Everything that used it shifts a little in texture.
-- **Sunspots** (`sunspot`, `penumbra` in `shaders/space.wgsl`).
-  - The penumbra is short fibres, not spokes: about 0.3 Mm across and 2.6 Mm long (Borrero and Ichimoto 2011, Living Rev.
-    Solar Phys. 8, 4: filaments 0.2 to 0.3 arcsec wide in continuum images; Solanki 2003, A&ARv 11, 153: 0.3 to 0.6 arcsec
-    wide, 0.5 to 2 arcsec long "or longer"; 1 arcsec is 0.725 Mm), each with its own length, width and brightness, a bright
-    head at its inner end (the penumbral grains) and a dark core along its axis where it is wide enough on screen (Scharmer
-    et al. 2002, Nature 420, 151; its widths could not be read, the paper being closed). They are laid out by sector round the
-    spot, each sector with its own starting places, so no two neighbours end together (a first layout on rings drew arcs), and
-    the whole is swirled a little. Bright fibres 0.78 to 1.05 of the photosphere, 0.52 between them, 0.80 on average and
-    under a pixel (Solanki 2003: bright filaments 0.7 to 1.0, dark 0.3 to 0.7, penumbrae 75 to 85% of the quiet Sun).
-  - Outlines are closed curves that wander (a noise taken round a circle), not circles with harmonics. The outer edge frays at
-    a granule's scale; the umbra's edge is ragged at a fibre's.
+- **Sunspots** (`sunspot`, `penumbral_source` and `photospheric_column` in `shaders/space.wgsl`).
+  - The magnetic region rotates with the star. At each position the field sets the local continuum emission and opacity. Its walls widen and vary through the emitting layer. The ray accumulates their contribution with the same transmission used for the quiet photosphere.
+  - Penumbral filaments have correlation lengths of about 0.3 Mm across the field and 2.6 Mm along it. Their orientation bends locally and their strength varies with depth. Unresolved fibres approach the mean penumbral brightness. The filament scales and mean brightness follow the observational ranges discussed by Solanki (2003) and Borrero and Ichimoto (2011).
   - The umbra is 20% of the photosphere in a large spot and up to 42% in a pore (Solanki 2003: 20 to 30%), with umbral dots
     (one to a cell of 0.55 Mm in four cells of ten, fewer toward the middle; estimates of their size run from 80 to 650 km in
     Solanki 2003) and, in a quarter of the spots over 4 Mm in radius, a curved, grained light bridge with a dark central
@@ -557,8 +551,7 @@ the rest of the synthetic surface; none of it is today's Sun. Nothing here is ne
     structure once its diameter exceeds roughly 3.5 Mm", Solanki 2003: a rule of thumb from the 1960s, as he says); a young
     region's spots have not grown one yet; an old one's lose it in sectors. The region's age reaches the shader for this. The
     follower has a fragment beside it; five pores a region.
-  - The umbra is still shifted toward the disk centre near the limb for its depression (the Wilson effect, 400 to 800 km in
-    mature spots, Solanki 2003); the spots are not in the relief below.
+  - The quiet-Sun optical-depth profile moves down by up to 620 km in a mature solar umbra. Oblique views see a different part of that volume through the surrounding gas. The orbital disk uses the same feature coordinates and blends into the resolved transfer calculation on approach.
 - **Loops** (`region_loops`). Fourteen over a quiet region, each a curve in a plane of its own in the shape of a dipole's
   field line (r = L sin^2, cut 35 degrees from each end), with its own place along and across the line between the
   polarities, reach, height (most low, a few tall), lean, thickness (0.7 to 2.3 Mm: wider than the loops the sharpest
@@ -583,7 +576,8 @@ the rest of the synthetic surface; none of it is today's Sun. Nothing here is ne
 - **Prominences are slabs.** A sheet with no thickness, seen edge-on, was a bright line across the disk. Each is now a slab
   4 Mm through (a choice) that wanders either side of its plane; the ray's stretch inside it is sampled at five points, so
   edge-on it is a soft dark band on the disk and from the side a sheet as before.
-- **Relief** (`star_depth`, and the search in `star`). The owner approved relief inside the impostor over giving the Sun a
+- **Close photospheric flight.** Within 0.04 stellar radii of the visible surface, the renderer integrates emission and absorption along each ray. It samples granulation at the opacity-weighted formation depth and uses that same distance to align successive frames. Between 0.04 and 0.15 radii of altitude it blends into the orbital model below.
+- **Orbital relief** (`star_depth`, and the search in `star`). The owner approved relief inside the impostor over giving the Sun a
   surface pass and the water layer (16 November 2026): that would have needed the Sun as a paged body, rings reaching a
   horizon 16,700 km away, a wave source other than the repeating ocean cache, a hand-over from the impostor, and new
   programs to compile.
@@ -645,7 +639,7 @@ the rest of the synthetic surface; none of it is today's Sun. Nothing here is ne
   along the ray is parallax and relief mapping (Kaneko et al., ICAT 2001; Policarpo, Oliveira and Comba, I3D 2005;
   Tatarchuk, I3D 2006, with the survey of Szirmay-Kalos and Umenhoffer, Computer Graphics Forum 2008). No peer-reviewed paper on a real-time procedural Sun was found in a web search on 16 November 2026, which
   is an absence of search hits and nothing stronger. Nothing here is claimed as new.
-- **Not done**: the spots are not in the relief; the flight's clearance is against the sphere, the crests' level, so the eye
+- **Not done**: the flight's clearance is against the sphere, the crests' level, so the eye
   cannot go down into a valley; the ejection's cavity; a loop model from a field
   extrapolation; differential rotation; today's Sun (as above). The relief's search is not conservative. The granulation's
   rms contrast was computed for the pattern (0.33 times 0.30) but not measured on screen. Not timed on a phone.
@@ -730,6 +724,8 @@ hyperdrive to other stars is unchanged.
 
 ## Saturn's ring shadow
 
+For the shadow cast into Saturn’s atmosphere, the renderer projects each main ring edge and gap across the apparent solar disk. The fraction covered by each annulus sets how much direct light reaches the gas. The projected length of a volume sample broadens that footprint on long grazing paths. Ringlet detail fades as it becomes smaller than the footprint. The shadow flight checks the result against 2,048 rays through the same ring material per receiver. [GPU regression](../tools/Test-Shadow-And-Spots.mjs)
+
 The ring sheet and the ring rocks both test the ray toward the Sun against the oblate spheroid
 with Saturn's table radii (60,268 / 54,364 km, the figure the body pass draws): `oblate_shadow`
 in `shaders/space.wgsl` (`bfe0edc`, 15 November 2026). Before, the sheet used a sphere and the
@@ -746,9 +742,9 @@ Exposed here rather than hidden. Listed so that no one has to discover them.
   Eridani's luminosity is not in its source and stays unknown; every star's spots, loops, flares, prominences and relief
   are a synthetic model, not today's Sun or any observed star ("The Sun, third pass").
 - Eclipses and shadows between bodies, other than Saturn and its rings.
-- Saturn, Uranus and Neptune have no real map. Deimos and Uranus's moons have no map. Mimas has none baked: its folder held
+- Uranus and Neptune have synthetic latitude maps. Deimos and Uranus's moons have no map. Mimas has none baked: its folder held
   no global mosaic that this listing could find.
-- Giants have only their 1024 x 512 map close up, so Jupiter blurs near the cloud tops.
+- Measured cloud colour on Jupiter and Saturn is limited to the orbital map resolution. The weather below that scale and its vertical relief are synthesized.
 - No measured heights on Io, Europa, Ganymede, Callisto, Saturn's moons or Triton. Titan's topography is not used. All the relief
   on these is synthesized.
 - Mars imagery is the 925 m colour mosaic and the Moon stops at level 6, about 212 m: a 232 m and a 100 m source are on hand or

@@ -204,6 +204,10 @@ const MAP_HEIGHT: u32 = 512;
 const MAP_LEVELS: u32 = 7;
 pub const MAP_LAYERS: u32 = 32;
 const SKY_SIDE: u32 = 2048;
+const SKY_PREVIEW_LEVEL: u32 = 4;
+const PREVIEW_SIDE: u32 = SKY_SIDE >> SKY_PREVIEW_LEVEL;
+const SKY_PREVIEW: &[u8; (6 * PREVIEW_SIDE * PREVIEW_SIDE * 3) as usize] =
+    include_bytes!("../data/sky-preview.rgb");
 const FAR_CLOUD_LEVELS: u32 = 6;
 pub const SOURCE: &str = include_str!("../../../shaders/space.wgsl");
 
@@ -275,7 +279,63 @@ fn targets(g: &Gpu, width: u32, height: u32) -> Targets {
         height,
     }
 }
+/// The largest resolved giant gets an independent view march. Keep the ring
+/// sheet and its occultations on the full-resolution space target.
+struct GiantTarget {
+    size: [u32; 2],
+    color: wgpu::TextureView,
+    depth: wgpu::TextureView,
+    group: wgpu::BindGroup,
+}
+impl GiantTarget {
+    fn new(g: &Gpu, layout: &wgpu::BindGroupLayout, size: [u32; 2]) -> Self {
+        let make = |label, format| {
+            g.device
+                .create_texture(&wgpu::TextureDescriptor {
+                    label: Some(label),
+                    size: wgpu::Extent3d {
+                        width: size[0],
+                        height: size[1],
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format,
+                    usage: wgpu::TextureUsages::TEXTURE_BINDING
+                        | wgpu::TextureUsages::RENDER_ATTACHMENT,
+                    view_formats: &[],
+                })
+                .create_view(&Default::default())
+        };
+        let color = make("giant radiance", wgpu::TextureFormat::Rgba16Float);
+        let depth = make("giant distance", wgpu::TextureFormat::R32Float);
+        let group = g.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("giant reconstruction"),
+            layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&color),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&depth),
+                },
+            ],
+        });
+        Self {
+            size,
+            color,
+            depth,
+            group,
+        }
+    }
+}
 struct Programs {
+    giant_march: wgpu::RenderPipeline,
+    giant_composite: wgpu::RenderPipeline,
+    giant_layout: wgpu::BindGroupLayout,
     body: wgpu::RenderPipeline,
     body_active: wgpu::RenderPipeline,
     far_cloud_mip: wgpu::ComputePipeline,
@@ -301,6 +361,8 @@ struct Programs {
     maps: wgpu::Texture,
 }
 pub struct SpacePass {
+    giant: Option<GiantTarget>,
+    giant_index: Option<usize>,
     targets: Targets,
     /// Counts the targets' replacements, so whoever binds the colour view knows when it is another texture.
     pub serial: u32,
@@ -329,10 +391,13 @@ pub struct SpacePass {
     /// Julian centuries from J2000, for proper motion, and the sky's brightness against the stars.
     pub centuries: f32,
     sky_scale: f32,
+    pub daylight: f32,
 }
 impl SpacePass {
     pub fn new(g: &Gpu) -> Self {
         Self {
+            giant: None,
+            giant_index: None,
             targets: targets(g, 1, 1),
             serial: 0,
             star_seen: None,
@@ -352,7 +417,8 @@ impl SpacePass {
             starlight: [1.0; 3],
             eye_sun: [0.0; 3],
             centuries: 0.0,
-            sky_scale: 0.0,
+            sky_scale: 0.3,
+            daylight: 1.0,
         }
     }
     pub fn enabled(&self) -> bool {
@@ -427,7 +493,11 @@ impl SpacePass {
         &self.targets.distance_view
     }
     pub fn bytes(&self) -> u64 {
-        let target = u64::from(self.targets.width * self.targets.height) * 12;
+        let target = u64::from(self.targets.width * self.targets.height) * 12
+            + self
+                .giant
+                .as_ref()
+                .map_or(0, |t| u64::from(t.size[0] * t.size[1]) * 12);
         let maps = if self.programs.is_some() {
             u64::from(MAP_WIDTH * MAP_HEIGHT * 4 * MAP_LAYERS) * 4 / 3
         } else {
@@ -436,7 +506,14 @@ impl SpacePass {
         target + maps
     }
     /// `far_cloud_width`: of the far cloud map, whose height is half that.
-    pub fn enable(&mut self, g: &Gpu, width: u32, height: u32, far_cloud_width: u32) {
+    pub(crate) fn enable(
+        &mut self,
+        g: &Gpu,
+        width: u32,
+        height: u32,
+        far_cloud_width: u32,
+        shape: &crate::clouds::CloudShape,
+    ) {
         self.targets = targets(g, width, height);
         self.serial += 1;
         let module = g.device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -525,13 +602,36 @@ impl SpacePass {
                 height: SKY_SIDE,
                 depth_or_array_layers: 6,
             },
-            mip_level_count: 2,
+            mip_level_count: SKY_PREVIEW_LEVEL + 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8UnormSrgb,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
+        let preview: Vec<u8> = SKY_PREVIEW
+            .chunks_exact(3)
+            .flat_map(|rgb| [rgb[0], rgb[1], rgb[2], 255])
+            .collect();
+        g.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &sky_map,
+                mip_level: SKY_PREVIEW_LEVEL,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &preview,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(PREVIEW_SIDE * 4),
+                rows_per_image: Some(PREVIEW_SIDE),
+            },
+            wgpu::Extent3d {
+                width: PREVIEW_SIDE,
+                height: PREVIEW_SIDE,
+                depth_or_array_layers: 6,
+            },
+        );
         let sky_view = sky_map.create_view(&wgpu::TextureViewDescriptor {
             dimension: Some(wgpu::TextureViewDimension::Cube),
             ..Default::default()
@@ -632,6 +732,20 @@ impl SpacePass {
                         },
                     ),
                     entry(
+                        49,
+                        wgpu::ShaderStages::FRAGMENT,
+                        wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D3,
+                            multisampled: false,
+                        },
+                    ),
+                    entry(
+                        87,
+                        wgpu::ShaderStages::FRAGMENT,
+                        wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    ),
+                    entry(
                         12,
                         wgpu::ShaderStages::FRAGMENT,
                         wgpu::BindingType::Texture {
@@ -665,6 +779,30 @@ impl SpacePass {
             .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("space draw"),
                 bind_group_layouts: &[Some(&layout)],
+                immediate_size: 0,
+            });
+        let sample = |binding, filterable| {
+            entry(
+                binding,
+                wgpu::ShaderStages::FRAGMENT,
+                wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+            )
+        };
+        let giant_layout = g
+            .device
+            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("giant reconstruction"),
+                entries: &[sample(0, true), sample(1, false)],
+            });
+        let composite_layout = g
+            .device
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("giant composite"),
+                bind_group_layouts: &[Some(&layout), Some(&giant_layout)],
                 immediate_size: 0,
             });
         let colour = |blend: wgpu::BlendState| {
@@ -702,7 +840,11 @@ impl SpacePass {
             g.device
                 .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                     label: Some(label),
-                    layout: Some(&pipeline_layout),
+                    layout: Some(if fragment == "giant_composite" {
+                        &composite_layout
+                    } else {
+                        &pipeline_layout
+                    }),
                     vertex: wgpu::VertexState {
                         module: &module,
                         entry_point: Some(vertex),
@@ -722,6 +864,18 @@ impl SpacePass {
                     cache: None,
                 })
         };
+        let giant_march = pipeline(
+            "giant atmosphere",
+            "body_vertex",
+            "giant_march",
+            &colour(over),
+        );
+        let giant_composite = pipeline(
+            "giant composite",
+            "body_vertex",
+            "giant_composite",
+            &colour(over),
+        );
         let body = pipeline(
             "space bodies",
             "body_vertex",
@@ -900,6 +1054,8 @@ impl SpacePass {
             label: Some("space draw"),
             layout: &layout,
             entries: &[
+                shape.entries()[0].clone(),
+                shape.entries()[1].clone(),
                 wgpu::BindGroupEntry {
                     binding: 0,
                     resource: uniform.as_entire_binding(),
@@ -953,6 +1109,9 @@ impl SpacePass {
         // A grey map until a body's own arrives: it says "no map yet" and does not pretend.
         upload_constant_maps(g, &maps, [150; 4]);
         self.programs = Some(Programs {
+            giant_layout,
+            giant_march,
+            giant_composite,
             body,
             body_active,
             far_cloud_mip,
@@ -1234,16 +1393,38 @@ impl SpacePass {
         height: u32,
         icrf: [[f32; 3]; 3],
         jitter: [f32; 2],
-        exposure: f32,
+        sky_radiance: f32,
+        atmosphere_steps: u32,
+        cloud_scale: u32,
+        cloud_steps: u32,
     ) {
         let Some(p) = &self.programs else {
             return;
         };
+        // Full-resolution giant silhouettes and cloud heads on the desktop presets.
+        let cloud_scale = if cloud_scale == 2 && atmosphere_steps >= 12 {
+            1
+        } else {
+            cloud_scale
+        };
+        self.giant_index = (0..self.visible.len().min(MAX_BODIES))
+            .filter(|&i| {
+                cloud_scale > 1
+                    && self.visible[i].shape[2] == 4.0
+                    && self.visible[i].shape[3] > 0.04
+            })
+            .max_by(|&a, &b| self.visible[a].shape[3].total_cmp(&self.visible[b].shape[3]));
+        let size = [width.div_ceil(cloud_scale), height.div_ceil(cloud_scale)];
+        if self.giant_index.is_some() && self.giant.as_ref().is_none_or(|t| t.size != size) {
+            self.giant = Some(GiantTarget::new(g, &p.giant_layout, size));
+        } else if self.giant_index.is_none() {
+            self.giant = None;
+        }
         let word = |v: [f32; 3]| [v[0], v[1], v[2], 0.0];
-        let view = View {
+        let mut view = View {
             right: [right[0], right[1], right[2], jitter[0]],
             up: [up[0], up[1], up[2], jitter[1]],
-            forward: word(forward),
+            forward: [forward[0], forward[1], forward[2], atmosphere_steps as f32],
             screen: [
                 width as f32,
                 height as f32,
@@ -1251,15 +1432,27 @@ impl SpacePass {
                 (30.0_f32.to_radians()).tan(),
             ],
             icrf: icrf.map(word),
-            tone: [exposure, self.centuries, self.sky_scale, self.belt_gain],
+            tone: [sky_radiance, self.centuries, self.sky_scale, self.belt_gain],
             eye_sun: [
                 self.eye_sun[0],
                 self.eye_sun[1],
                 self.eye_sun[2],
                 self.visible.len().min(MAX_BODIES) as f32,
             ],
-            starlight: [self.starlight[0], self.starlight[1], self.starlight[2], 0.0],
+            starlight: [
+                self.starlight[0],
+                self.starlight[1],
+                self.starlight[2],
+                if self.sky_loaded {
+                    0.0
+                } else {
+                    SKY_PREVIEW_LEVEL as f32
+                },
+            ],
         };
+        view.icrf[0][3] = size[0] as f32;
+        view.icrf[1][3] = size[1] as f32;
+        view.icrf[2][3] = cloud_steps as f32;
         g.queue
             .write_buffer(&p.uniform, 0, bytemuck::bytes_of(&view));
         self.view = Some(view);
@@ -1322,6 +1515,31 @@ impl SpacePass {
         let Some(p) = &self.programs else {
             return;
         };
+        if let (Some(i), Some(t)) = (self.giant_index, &self.giant) {
+            let attachment = |view| {
+                Some(wgpu::RenderPassColorAttachment {
+                    view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })
+            };
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("giant atmosphere"),
+                color_attachments: &[attachment(&t.color), attachment(&t.depth)],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&p.giant_march);
+            pass.set_bind_group(0, &p.draw, &[]);
+            let vertices = if self.visible[i].rect[2] >= 4.0 { 3 } else { 6 };
+            pass.draw(0..vertices, i as u32..i as u32 + 1);
+        }
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("space"),
             color_attachments: &[
@@ -1350,10 +1568,8 @@ impl SpacePass {
             multiview_mask: None,
         });
         pass.set_bind_group(0, &p.draw, &[]);
-        if self.sky_loaded {
-            pass.set_pipeline(&p.sky);
-            pass.draw(0..3, 0..1);
-        }
+        pass.set_pipeline(&p.sky);
+        pass.draw(0..3, 0..1);
         if self.belt_gain > 0.0 {
             pass.set_pipeline(&p.belt);
             pass.draw(0..3, 0..1);
@@ -1366,8 +1582,17 @@ impl SpacePass {
             pass.set_pipeline(&p.asteroid);
             pass.draw(0..self.asteroids_loaded, 0..1);
         }
-        pass.set_pipeline(&p.body);
         for i in 0..self.visible.len().min(MAX_BODIES) as u32 {
+            if let Some(t) = self
+                .giant
+                .as_ref()
+                .filter(|_| self.giant_index == Some(i as usize))
+            {
+                pass.set_pipeline(&p.giant_composite);
+                pass.set_bind_group(1, &t.group, &[]);
+            } else {
+                pass.set_pipeline(&p.body);
+            }
             let full = self.visible[i as usize].rect[2] >= 4.0;
             pass.draw(0..if full { 3 } else { 6 }, i..i + 1);
         }

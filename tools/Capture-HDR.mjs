@@ -8,6 +8,7 @@ import {mkdirSync,writeFileSync} from 'node:fs';
 import {join,resolve} from 'node:path';
 import {headless} from './Headless.mjs';
 import {ready,capture} from './Explorer-Test-Lib.mjs';
+import {giantShot} from './Giant-Flight.mjs';
 const arg=(k,d)=>{const i=process.argv.indexOf('--'+k);return i<0?d:process.argv[i+1];};
 const base=arg('base','http://127.0.0.1:5401'),out=resolve(arg('out','evidence/local/hdr')),quality=arg('quality','high');mkdirSync(out,{recursive:true});
 const T=852076800,AU=1.495978707e11,R=6.957e8;
@@ -15,6 +16,7 @@ const NOON="const f=solarFlight;f.setTime(Date.parse('2026-06-21T11:00:00Z')/100
 const solar=`explorer.html?test=1&quality=${quality}&limits=off&body=solar&tdb=${T}`;
 // [name, page, what to run once it is ready, seconds to let it settle]
 const SCENES=[
+ ...[['saturn-wide',699,0],['saturn-limb',699,.42],['saturn-shadow',699,.67],['saturn-immersed',699,.93],['jupiter-skim',599,.72]].map(([name,id,t])=>[name,solar,giantShot(id,t),7]),
  ['earth-day',solar,NOON+"f.goEarth('lavaux');",30],
  ['earth-peak',solar,NOON+"f.goEarth('matterhorn');",30],
  ['earth-dusk',solar,NOON+"f.flight.jump_low_sun(399,1500,3);",30],

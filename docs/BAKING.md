@@ -12,6 +12,12 @@ node tools/Rebake-Packs.mjs --only small    # the packs whose sources are under 
 It needs what the README already asks for: Rust through rustup (the toolchain pinned in `rust-toolchain.toml`
 installs itself) and Node 22 or later, no packages, no Python, no GDAL.
 
+## Saturn weather
+
+Run `node tools/Rebake-Packs.mjs --only saturn-opal` to reproduce `web/pack/solar/maps/saturn-opal-2023b.png`. The browser ships an identical copy at `web/saturn-opal-2023b.png` so deployments using an existing pack mirror receive the new weather. The recipe pins the three FITS hashes and the bundled output hash. The older `saturn-map` recipe reproduces the historical release.
+
+The baker uses the October 2023 Rotation B data, whose limb correction has already been applied. It converts FITS values to I/F with the per-filter scales, rotates west longitude into the renderer’s east-longitude convention and samples planetographic latitude on the oblate figure. Visible colours are estimated by interpolating the narrow bands. It fills the ring-obscured band between 19.2 and 1.5 degrees south and tapers to the last usable zonal mean at the south pole. [OPAL product README](https://archive.stsci.edu/hlsps/opal/cycle30/saturn/hlsp_opal_hst_wfc3-uvis_saturn-2023_all_v1_readme.txt)
+
 ## What it does
 
 1. Reads `tools/rebake.json`: every source (URL, size, SHA-256, the product's page, its credit) and every product
@@ -101,6 +107,8 @@ its reason, and the two that were wrong are corrected in version 2 ("Pack versio
   byte for byte, so this is the map, not a candidate.
 - **Sky**: NASA SVS Deep Star Maps 2020, `starmap_2020_8k.exr` (8192 x 4096). The 4k map was fetched first and does
   not give these faces.
+  After baking the six faces, run `python tools/Bake-Sky-Preview.py` with Pillow and NumPy to regenerate the
+  bundled 128-pixel cube. The script averages each 16 × 16 block in linear light.
 - **Earth**: as recorded in its own manifest (JPEG quality 88, 4:4:4, height step 1 m, up to 16 m at a page's
   roughness / 4, 15 zopfli iterations), which are also the defaults; its two sources are those `solar-bake fetch`
   names.

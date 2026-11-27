@@ -98,7 +98,7 @@ export function installCompiler(progress,fatal){
   const wrapped=d=>{const key=fingerprint(d),p=cache.get(key);if(p){report.cacheHits++;return p;}report.unexpectedCompiles++;throw Error(`Pipeline missing from asynchronous startup: ${d.label||d.compute?.entryPoint||d.vertex?.entryPoint}. Descriptor: ${key}`);};
   // The space pass's small programs have their own module and are created when it turns on, so a single body's startup never holds them.
   // The finish (finish.wgsl: the HDR frame to the display image) is a small module of its own too, created with the renderer.
-  const SPACE=new Set(['space bodies','space far planet','far cloud levels','stars','space trails','space ring rocks','space belt rocks','space sky','space belt','space asteroids','finish','bloom down','bloom up','exposure meter']);
+  const SPACE=new Set(['space bodies','giant atmosphere','giant composite','space far planet','far cloud levels','stars','space trails','space ring rocks','space belt rocks','space sky','space belt','space asteroids','finish','bloom down','bloom up','exposure meter']);
   device.createComputePipeline=d=>SPACE.has(d.label)?compute(d):wrapped(d);
   device.createRenderPipeline=d=>SPACE.has(d.label)?render(d):wrapped(d);
   // The renderer asks before creating a deferred program's pipeline.

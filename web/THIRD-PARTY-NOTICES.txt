@@ -123,14 +123,14 @@ Read from the data packs:
   (NASA/GSFC/ASU), MESSENGER (NASA/JHUAPL/CIW), Magellan, Viking, Mars Global Surveyor,
   Voyager, Galileo and Cassini (NASA/JPL), Mars Express SRC (ESA/DLR/FU Berlin) and
   New Horizons (NASA/JHUAPL/SwRI).
-- Jupiter: Cassini cylindrical map, NASA/JPL/Space Science Institute. Saturn, Uranus and
-  Neptune are drawn from a synthetic colour by latitude, not from data.
+- Jupiter: Cassini cylindrical map, NASA/JPL/Space Science Institute. Uranus and Neptune use synthetic colours by latitude.
 - The sky: Deep Star Maps 2020, NASA/Goddard Space Flight Center Scientific Visualization
   Studio. Gaia DR2: ESA/Gaia/DPAC.
 - Bright stars: Yale Bright Star Catalogue, 5th revised edition (Hoffleit and Warren, 1991).
 - Asteroids: JPL Small-Body Database, NASA/JPL-Caltech.
 
 Shipped with the app:
+- Saturn: derived from NASA/ESA Hubble Space Telescope OPAL observations (PI A. Simon, GO 13937), archived by STScI, operated by AURA under NASA contract NAS 5-26555. Cycle 30, rotation B, 22 October 2023. F631N, F502N, F395N. Ring-obscured region and south polar cap filled. DOI 10.17909/T9G593.
 - Named surface features: IAU Working Group for Planetary System Nomenclature, Gazetteer of
   Planetary Nomenclature (USGS Astrogeology Science Center), https://planetarynames.wr.usgs.gov/
 - Orbits: this project's own fit of the JPL planetary and satellite ephemerides distributed

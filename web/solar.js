@@ -9,6 +9,7 @@ import {installPlanetIndicators,PLACES} from './planet-indicators.js';
 import {installLandmarks} from './landmarks.js';
 import {forGame} from './game-input.js';
 import {packSite,packFolder} from './pack-base.js';
+import {giantFlightPath} from './giant-flight.js';
 import {approximatePlace} from './home-zone.js';
 // (As `image`: `world` below is the select element of the same name, which shadowed this and gave the packet no size.)
 import {world as image} from './quality.js';
@@ -31,7 +32,7 @@ const accel=v=>{const a=Math.abs(v);return a<1000?`${group(v,a<10?2:0)} m/s²`:a
 // Display names in the order they are offered, grouped by what they orbit.
 const nameOf=id=>PLACES.find(p=>p[0]===id)?.[1]??'—';
 // What the eye is looking at, stated. A body's pack says what its image is and whether it has heights; these have none to read.
-const NOT_MEASURED={10:'Sun: a model, not an image. Colour from a 5772 K blackbody (IAU 2015 B3), limb darkening measured (Neckel and Labs 1994), the corona’s brightness profile Baumbach’s (1937). Granulation, the network, active regions with their spots, loops, prominences and flares are synthetic: not today’s Sun.',599:'Jupiter: Cassini map, 2000. No height: a giant has no ground. Flying in, the air closes the view.',699:'Saturn: colour by latitude is a placeholder, not a map. Ring gaps and depths are published values; their fine ringlets, and every rock up close, are synthesized. Real ring particles are mostly under 10 m, and these do not orbit.',799:'Uranus: colour by latitude is a placeholder, not a map.',899:'Neptune: colour by latitude is a placeholder, not a map.',402:'Deimos: no global map found. It is grey, and not a sphere in reality.',401:'Phobos: not a sphere in reality; this renderer draws a radial surface.',601:'Mimas: no map used yet.',701:'Ariel: no global map found.',702:'Umbriel: no global map found.',703:'Titania: no global map found.',704:'Oberon: no global map found.',705:'Miranda: no global map found.'};
+const NOT_MEASURED={10:'Sun: a model, not an image. Colour from a 5772 K blackbody (IAU 2015 B3), limb darkening measured (Neckel and Labs 1994), the corona’s brightness profile Baumbach’s (1937). Granulation, the network, active regions with their spots, loops, prominences and flares are synthetic: not today’s Sun.',599:'Jupiter: observed cloud colour from Cassini, December 2000. Cloud heights, winds and close structure are synthesized.',699:'Saturn: Hubble OPAL weather from 22 October 2023. Obscured latitudes are filled. Cloud heights, winds and close structure are synthesized. Ring gaps and depths are published values; their fine ringlets, and every rock up close, are synthesized. Real ring particles are mostly under 10 m, and these do not orbit.',799:'Uranus: synthetic colour by latitude, haze and cloud structure.',899:'Neptune: synthetic colour by latitude, haze and cloud structure.',402:'Deimos: no global map found. It is grey, and not a sphere in reality.',401:'Phobos: not a sphere in reality; this renderer draws a radial surface.',601:'Mimas: no map used yet.',701:'Ariel: no global map found.',702:'Umbriel: no global map found.',703:'Titania: no global map found.',704:'Oberon: no global map found.',705:'Miranda: no global map found.'};
 const describing=new Map();
 const descriptionsInFlight=new Map();
 // Other stars (solar-core galaxy.rs): ids 10000 + 100 k, their worlds the next ids up. Sol's bodies are system 10.
@@ -88,7 +89,7 @@ export async function startSolar({engine,params,canvas,$}){
  <div class="group-title" id="solar-display-title"><span>Display</span></div>
  <div class="checks three"><label><input type="checkbox" id="solar-labels" checked> Labels <kbd>L</kbd></label><label><input type="checkbox" id="solar-trails" checked> Orbits <kbd>O</kbd></label><label title="Named surface features of the nearest body (IAU)"><input type="checkbox" id="solar-landmarks-on" checked> Landmarks <kbd>N</kbd></label></div>
  <div class="checks"><label title="A camera metering on a star once its disk is resolved, so its surface shows instead of clipping to white. Only the star's light is scaled; the exposure is stated when it applies."><input type="checkbox" id="solar-star-adapt" checked> Meter on a star's disk</label><label title="Granulation, the network's faculae and sunspots: a synthetic layer with measured sizes and contrasts, not today's Sun."><input type="checkbox" id="solar-star-detail" checked> Synthetic star surface</label></div>
- <label title="Familiar: the star as the well-known filtered pictures show it (an orange disk, H-alpha red chromosphere and prominences, gold EUV loops, the corona brightened as eclipse pictures are): false colour. True colour: what an eye would see, where everything but the disk is a millionth of it.">Stars <select id="solar-star-view"><option value="1">Familiar · filtered, false colour</option><option value="0">True colour</option></select></label>
+ <label title="Visible light shows photospheric convection. The filtered composite enhances the chromosphere, prominences, coronal loops and corona.">Stars <select id="solar-star-view"><option value="0">Visible light · photosphere</option><option value="1">Filtered composite · false colour</option></select></label>
  <label for="solar-belt">Asteroid belts <output id="solar-belt-value"></output><input id="solar-belt" type="range" min="0" max="12" step="0.5" value="8"></label>`;
  $('sound-section').after(hud);
  // The picture's finish (bloom, lens flare) belongs with Display here; on a page without this panel it stays under Quality details.
@@ -125,13 +126,13 @@ export async function startSolar({engine,params,canvas,$}){
  for(const id of ['solar-star-adapt','solar-star-detail'])try{const v=localStorage.getItem(id);if(v!==null)$(id).checked=v==='1';}catch{}
  const syncStars=()=>{flight.set_star_options($('solar-star-adapt').checked,$('solar-star-detail').checked);for(const id of ['solar-star-adapt','solar-star-detail'])try{localStorage.setItem(id,$(id).checked?'1':'0');}catch{}};
  for(const id of ['solar-star-adapt','solar-star-detail'])$(id).onchange=()=>{syncStars();$(id).blur();};syncStars();
- try{const v=localStorage.getItem('solar-star-view');if(v!==null)$('solar-star-view').value=v;}catch{}
- const syncView=()=>{flight.set_star_view(Number($('solar-star-view').value));describing.delete(10);try{localStorage.setItem('solar-star-view',$('solar-star-view').value);}catch{}};
+ try{const v=localStorage.getItem('solar-star-band');if(v!==null)$('solar-star-view').value=v;}catch{}
+ const syncView=()=>{flight.set_star_view(Number($('solar-star-view').value));describing.delete(10);try{localStorage.setItem('solar-star-band',$('solar-star-view').value);}catch{}};
  $('solar-star-view').onchange=()=>{syncView();$('solar-star-view').blur();};syncView();
  // Planet travel and named Earth destinations both remain available, in the panel's first section under their own names.
  const destination=$('destination'),earthCameras=new Map([...destination.options].map(o=>{const c=JSON.parse(engine.bookmark(o.value));c[2]=c[0].map(v=>v/Math.hypot(...c[0]));return [o.value,c];}));
  const world=$('world-select');world.replaceChildren();
- const whole=document.createElement('optgroup');whole.label='See the whole system';whole.append(new Option('Inner planets, from above','view:6e11'),new Option('All the planets, from above','view:1.2e13'),new Option("Inside Saturn's rings",'rings'),new Option('Inside the asteroid belt','belt'));world.append(whole);
+ const whole=document.createElement('optgroup');whole.label='See the whole system';whole.append(new Option('Inner planets, from above','view:6e11'),new Option('All the planets, from above','view:1.2e13'),new Option('Saturn cloud flyby · October 2013','saturn-flyby'),new Option('Jupiter cloud skim','jupiter-flyby'),new Option('Sun · granulation','granulation:10'),new Option('Sun · photospheric limb','photosphere:10'),new Option('Proxima Centauri · photospheric limb','photosphere:10000'),new Option("Inside Saturn's rings",'rings'),new Option('Inside the asteroid belt','belt'));world.append(whole);
  const bodies=document.createElement('optgroup');bodies.label='Go to';for(const [id,name] of SOL)bodies.append(new Option(name,id));world.append(bodies);
  for(const s of GALAXY)world.append(starGroup(s,`Hyperdrive: ${s.name} · ${s.distance} ly`));
  const leave=document.createElement('optgroup');leave.label='Leave the solar system view';leave.append(new Option('Real Earth only','earth'),new Option('Procedural planet','procedural'));world.append(leave);
@@ -140,9 +141,26 @@ export async function startSolar({engine,params,canvas,$}){
  const local=$('local-section');local.classList.add('solar');
  const more=document.createElement('div');more.className='group-title';more.innerHTML='<span>More places</span>';local.prepend(more);
  world.value=String(Number(params.get('at'))||399);
+ let flyby=null,flybySeconds=0,flybyBody=699;
+ const cancelFlyby=()=>{if(flyby){flyby=null;world.value=String(flybyBody);}};
+ window.addEventListener('pointerdown',cancelFlyby,{capture:true});
+ window.addEventListener('keydown',cancelFlyby,{capture:true});
  world.onchange=()=>{
   const v=world.value;
   if(v==='earth'||v==='procedural'){const q=new URLSearchParams(location.search);q.set('body',v);location.search='?'+q;return;}
+  if(v==='saturn-flyby'||v==='jupiter-flyby'){
+   flybyBody=v==='saturn-flyby'?699:599;
+   setTime(Date.parse('2013-10-10T12:00:00Z')/1000+3-J2000_UNIX);
+   flyby=giantFlightPath(flight,flybyBody);flybySeconds=0;flyby(0);setTarget(0);world.blur();return;
+  }
+  flyby=null;
+  if(v.startsWith('photosphere:')||v.startsWith('granulation:')){
+   const [view,body]=v.split(':'),id=Number(body),radius=SolarFlight.body_radius(id);
+   const limb=view==='photosphere';
+   const z=radius*(limb?1.006:1.02),pitch=limb?Math.acos(radius/z):1.25;
+   flight.jump_camera(id,new Float64Array([0,0,z,1000*Math.cos(pitch),0,z-1000*Math.sin(pitch),0,0,1]));
+   setTarget(0);world.value=String(id);world.blur();return;
+  }
   if(v==='rings'){flight.jump_rings(150);world.blur();return;}
   if(v==='belt'){flight.jump_belt();world.blur();return;}
   if(v.startsWith('view:')){flight.jump_overview(Number(v.slice(5)));world.blur();return;}
@@ -330,6 +348,10 @@ $('solar-look').onclick=look;$('solar-fly').onclick=fly;$('solar-stop').onclick=
   // A two-finger twist turns the world with the fingers (the owner found it backwards on 16 November 2026: the sign is flipped).
   const roll=axis('KeyE','KeyQ')+(dt>0?Math.max(-20,Math.min(20,twist/dt)):0);twist=0;
   const input=new Float64Array([clamp(axis('KeyD','KeyA')+(analog?.x||0)),clamp(axis('Space','KeyC')+(analog?.z||0)),clamp(axis('KeyW','KeyS')+(analog?.y||0)),setting,keys.has('ShiftLeft')||keys.has('ShiftRight')||analog?.boost?1:0,keys.has('KeyC')||(analog?.z||0)<0?1:0,keys.has('KeyX')||brakeHeld?1:0,roll,assist?1:0,wanted!==0&&last[0]===wanted?engine.safe_height():0]);
+  if(flyby){
+   if(input[0]||input[1]||input[2]||input[6]||input[7])cancelFlyby();
+   else{flybySeconds+=dt;flyby(Math.min(1,flybySeconds/55));if(flybySeconds>=55)cancelFlyby();}
+  }
   if(dt>0)flight.step(dt,input);
   last=flight.report();
   const p=flight.packet(image.width,image.height);wanted=p[9];packet=p;
@@ -364,11 +386,15 @@ $('solar-look').onclick=look;$('solar-fly').onclick=fly;$('solar-stop').onclick=
   if(off)notes.push('Outside the fitted span of the table: positions hold still.');
   if(stats?.solar&&stats.solar.wanted&&!stats.solar.surface_shown)notes.push(`Surface pages coming in: ${stats.solar.uploaded_since_switch} uploaded.`);
   describe(near);const said=describing.get(near);if(said)notes.push(said);
-  if(systemOf(near)===near||near===10){notes.push($('solar-star-view').value==='1'?'Stars in the familiar view: filtered pictures in false colour (an orange disk with the network’s mottle, H-alpha red chromosphere and prominences, 171 Å gold loops), the corona brightened as eclipse pictures are processed, the granulation and flares time-lapsed 15×, molten veins added, the surface’s relief two and a half times the measured (valleys 250 km deep between granules). Not what an eye would see; True colour in Display.':'Stars in true colour: the corona, chromosphere and prominences are a millionth of the disk and show only when it is covered.');}
-  const exposure=flight.star_exposure();if(exposure<0.999)notes.push(`Star disk shown ${(-Math.log2(exposure)).toFixed(1)} EV darker than the planets: the camera meters on it once it is resolved (a display model; switch in Display).`);
+  if(systemOf(near)===near||near===10){notes.push($('solar-star-view').value==='1'?'Stars in the familiar view: filtered pictures in false colour (an orange disk with the network’s mottle, H-alpha red chromosphere and prominences, 171 Å gold loops), the corona brightened as eclipse pictures are processed, the granulation and flares time-lapsed 15×, molten veins added, exaggerated granule relief. Select Visible light in Display for broadband continuum.':'Broadband visible light. The photosphere shows granules, dark lanes and magnetic regions. Coronal emission is faint at disk exposure.');}
+  const exposure=flight.star_exposure();if(!$('spacecraft-camera').checked&&exposure<0.999)notes.push(`Star disk shown ${(-Math.log2(exposure)).toFixed(1)} EV darker than the planets: the camera meters on it once it is resolved (a display model; switch in Display).`);
   if(stats?.solar?.belt_field)notes.push('Asteroids here: the orbits and sizes of the catalogued ones are real, but they lie millions of km apart. The field of rocks around you is synthesized so that a belt can be seen from inside it; the slider at 0 removes it.');
   show.note(notes.join(' '));
  }
  syncZone();setCollapsed(collapsed);
+ const requestedView=params.get('view');
+ if(['saturn-flyby','jupiter-flyby','granulation:10','photosphere:10','photosphere:10000'].includes(requestedView)){
+  world.value=requestedView;world.dispatchEvent(new Event('change'));
+ }
  return {frame,packet:take,probe:()=>probeDirection,trails:trailPoints,report,look:(dx,dy)=>flight.look(dx,dy),roll:angle=>{twist+=angle;},flight,setRate,goEarth,setTime,setLocalTime,go,goOver,landAt,get landmarks(){return landmarks;}};
 }

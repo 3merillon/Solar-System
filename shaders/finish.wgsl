@@ -143,9 +143,15 @@ const METER_KEY:f32=0.4;const METER_PEAK:f32=3.0;
  let lit=squares/max(sum,1e-6);
  var goal=clamp(sqrt(METER_KEY/max(lit,1e-4)),0.354,1.62);
  goal=min(goal,max(1.0,METER_PEAK/max(peak,1e-4)));
+ if u.meter.z>0.5{
+  let incident=max(1e-6,lit*u.meter.w);
+  goal=clamp(0.34/incident,1.0/1024.0,2048.0);
+  goal=min(goal,5.0/max(peak*u.meter.w,1e-5));
+ }
  let before=textureLoad(adapted,vec2<i32>(0),0).r;
  // No history yet (the first frame): the goal at once.
- let now=select(goal,exp2(mix(log2(max(before,1e-3)),log2(goal),u.meter.y)),before>0.0);
+ let rate=select(u.meter.y,1.0-pow(1.0-u.meter.y,0.35),u.meter.z>0.5&&goal>before);
+ let now=select(goal,exp2(mix(log2(max(before,1e-6)),log2(goal),rate)),before>0.0);
  return vec4<f32>(now,0.0,0.0,1.0);
 }
 @fragment fn finish(c:Corner)->@location(0) vec4<f32>{

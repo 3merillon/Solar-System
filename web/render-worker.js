@@ -43,6 +43,18 @@ const fieldFor=name=>{
 };
 async function loadSpaceAssets(names){
  const {solar:solarPack,base}=await packSite();
+ async function loadMap(layer,url){
+  const response=await fetch(url);
+  if(!response.ok)throw Error(`Body map ${response.status}: ${url}`);
+  const bitmap=await createImageBitmap(await response.blob(),{colorSpaceConversion:'none'});
+  try{
+   const canvas=new OffscreenCanvas(1024,512),context=canvas.getContext('2d',{willReadFrequently:true});
+   context.drawImage(bitmap,0,0,1024,512);
+   mapQueue.push({layer,rgba:new Uint8Array(context.getImageData(0,0,1024,512).data.buffer)});
+  }finally{bitmap.close();}
+ }
+ const saturn=names.indexOf('saturn');
+ if(saturn>=0)await loadMap(saturn,new URL('./saturn-opal-2023b.png',import.meta.url)).catch(console.warn);
  if(solarPack)try{const r=await fetch(`${base}solar/stars.bin`);if(r.ok)spaceStars=new Float32Array(await r.arrayBuffer());}catch{}
  if(solarPack)try{const r=await fetch(`${base}solar/asteroids.bin`);if(r.ok)spaceAsteroids=new Float32Array(await r.arrayBuffer());}catch{}
  // The sky: six faces at two sizes, one face entering the engine per frame.
@@ -57,13 +69,8 @@ async function loadSpaceAssets(names){
  }
  for(let layer=0;layer<names.length;layer++){
   if(!solarPack)break;
-  if(NO_BAKED_MAP.has(names[layer]))continue;
-  try{
-   const r=await fetch(base+mapFile(names[layer]));if(!r.ok)continue;
-   const bitmap=await createImageBitmap(await r.blob(),{colorSpaceConversion:'none'});
-   const canvas=new OffscreenCanvas(1024,512),c=canvas.getContext('2d',{willReadFrequently:true});c.drawImage(bitmap,0,0,1024,512);bitmap.close();
-   mapQueue.push({layer,rgba:new Uint8Array(c.getImageData(0,0,1024,512).data.buffer)});
-  }catch{}
+  if(layer===saturn||NO_BAKED_MAP.has(names[layer]))continue;
+  await loadMap(layer,base+mapFile(names[layer])).catch(console.warn);
  }
 }
 let spaceStars=null,spaceAsteroids=null;const skyQueue=[];

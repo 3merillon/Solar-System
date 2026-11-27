@@ -150,6 +150,8 @@ pub struct Settings {
     pub lens_flare: bool,
     /// The frame's exposure adapts to its light, slowly and in part (finish.wgsl `exposure_meter`).
     pub auto_exposure: bool,
+    /// Photographic metering at a common daylight reference for every destination.
+    pub spacecraft_camera: bool,
     pub tolerance: f64,
     pub lod_distance: f64,
     pub patch_cap: usize,
@@ -225,6 +227,7 @@ impl Default for Settings {
             bloom_levels: 6,
             lens_flare: true,
             auto_exposure: true,
+            spacecraft_camera: true,
             tolerance: 2.0,
             lod_distance: 4.0,
             patch_cap: 2240,
@@ -237,7 +240,7 @@ impl Default for Settings {
 impl Settings {
     /// What the finish does with these settings. A diagnostic view is shown as it is, without bloom or flare. `sources`: the
     /// bright sources in view (finish.rs `Options::sources`).
-    pub fn finish(&self, sources: &[[f32; 4]], dt: f64) -> crate::finish::Options {
+    pub fn finish(&self, sources: &[[f32; 4]], dt: f64, daylight: f32) -> crate::finish::Options {
         let mut list = [[0.0; 4]; crate::finish::MAX_SOURCES];
         let count = if self.lens_flare && self.debug == 0 {
             sources.len().min(list.len())
@@ -249,6 +252,12 @@ impl Settings {
             sources: list,
             source_count: count,
             auto_exposure: self.auto_exposure && self.debug == 0,
+            photographic: self.spacecraft_camera && self.debug == 0,
+            daylight: if self.spacecraft_camera && self.debug == 0 {
+                daylight
+            } else {
+                1.0
+            },
             dt: dt as f32,
             exposure: self.exposure as f32,
             bloom_levels: if self.bloom && self.debug == 0 {
@@ -315,7 +324,7 @@ impl Settings {
             || !(0.0..=3.0).contains(&self.wave_speed)
             || !(0.25..=4.0).contains(&self.water_clarity)
             || !(0.0..=2.0).contains(&self.foam)
-            || !(0.1..=5.0).contains(&self.exposure)
+            || !(1.3 / 4096.0..=1.3 * 4096.0).contains(&self.exposure)
             || !(1..=crate::finish::MAX_LEVELS).contains(&self.bloom_levels)
             || !(0.2..=200.0).contains(&self.tolerance)
             || !(0.5..=16.0).contains(&self.lod_distance)
@@ -1882,8 +1891,13 @@ impl Renderer {
             return;
         }
         let far_width = self.tier.weather_face * 2;
-        self.space
-            .enable(&self.gpu, self.width, self.height, far_width);
+        self.space.enable(
+            &self.gpu,
+            self.width,
+            self.height,
+            far_width,
+            &self.cloud_shape,
+        );
         crate::startup::mark("space pass");
         self.solar_on = true;
         self.surface_shown = false;
@@ -2178,6 +2192,7 @@ impl Renderer {
         let f3 = |v: V3| [v[0] as f32, v[1] as f32, v[2] as f32];
         let active = crate::solar::layer_of(self.body.naif) as f32;
         let mut bodies = Vec::with_capacity(count);
+        self.space.daylight = packet[36] as f32;
         let earth_layer = crate::solar::layer_of(399) as f32;
         let clouds_asked = self.asked.map_or(self.settings.clouds, |a| a.clouds);
         let pixel = 2.0 * 30.0_f32.to_radians().tan() / self.height as f32;
@@ -2201,12 +2216,17 @@ impl Renderer {
                 self.earth_seen = true;
             }
             let ring = [f(33), f(34), f(35), far_clouds as u32 as f32];
+            let sunlight = if self.settings.spacecraft_camera || flag == 1.0 {
+                f(15)
+            } else {
+                f(15).min(4.0)
+            };
             if drawn_by_surface && self.surface_blend < 1.0 {
                 self.space.overlay = Some(crate::space::Body {
                     rect: [f(0), f(1), f(2), f(3)],
                     center: [f(4), f(5), f(6), f(7)],
                     shape: [f(8), layer, f(10), f(11)],
-                    sun: [f(12), f(13), f(14), f(15)],
+                    sun: [f(12), f(13), f(14), sunlight],
                     axes: [
                         [f(16), f(17), f(18), f(36)],
                         [f(19), f(20), f(21), f(37)],
@@ -2217,17 +2237,23 @@ impl Renderer {
                     ring,
                 });
             }
+            let mut air = [f(25), f(26), f(27), f(28)];
+            if flag == 1.0 && self.settings.spacecraft_camera {
+                for channel in &mut air[..3] {
+                    *channel /= (packet[37] as f32 * self.space.daylight).max(1e-8);
+                }
+            }
             bodies.push(crate::space::Body {
                 rect: [f(0), f(1), f(2), f(3)],
                 center: [f(4), f(5), f(6), f(7) - sunk],
                 shape: [f(8) - sunk, layer, flag, f(11)],
-                sun: [f(12), f(13), f(14), f(15)],
+                sun: [f(12), f(13), f(14), sunlight],
                 axes: [
                     [f(16), f(17), f(18), f(36)],
                     [f(19), f(20), f(21), f(37)],
                     [f(22), f(23), f(24), f(38)],
                 ],
-                air: [f(25), f(26), f(27), f(28)],
+                air,
                 beta: [f(29), f(30), f(31), f(32)],
                 ring,
             });
@@ -2288,7 +2314,14 @@ impl Renderer {
             self.height,
             icrf,
             self.jitter(),
-            self.settings.exposure as f32,
+            if self.settings.spacecraft_camera {
+                0.00003 / self.space.daylight
+            } else {
+                -1.0
+            },
+            self.settings.atmosphere_steps,
+            self.settings.cloud_scale,
+            self.settings.cloud_steps,
         );
         Ok(changed)
     }
@@ -2723,7 +2756,8 @@ impl Renderer {
                     key,
                     (self.width, self.height),
                     &self.targets.display.view,
-                    self.settings.finish(&self.space.star_sources(), dt),
+                    self.settings
+                        .finish(&self.space.star_sources(), dt, self.space.daylight),
                     &mut |e, label| self.marker.mark(e, label),
                 );
                 self.last_encode_ms = crate::now_ms() - start;
@@ -3180,7 +3214,8 @@ impl Renderer {
             key,
             (self.width, self.height),
             &self.targets.display.view,
-            self.settings.finish(&self.flare_sources(), dt),
+            self.settings
+                .finish(&self.flare_sources(), dt, self.space.daylight),
             &mut |e, label| self.marker.mark(e, label),
         );
         self.last_encode_ms = crate::now_ms() - start;

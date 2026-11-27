@@ -24,9 +24,10 @@ const CAMERA_BOUND: f64 = 240e6;
 const STAR_REACH: f64 = 28.0;
 /// Packet layout. Fields, then a fixed number of doubles per body.
 /// 33..36: the colour of the system star's light against the Sun's (stars.rs `tint`).
-pub const HEADER: usize = 36;
-/// 36..39 per body: a star's view (0 true colour, 1 the familiar composite), its clock in days (modulo 1000), its seed; zero
-/// for every other body. space.wgsl reads them as the w of its three axes rows.
+/// 36 and 37 carry incident daylight relative to Earth and the resolved-star display exposure.
+pub const HEADER: usize = 38;
+/// 36..39 per body carry the stellar view, clock and seed, or the two wind phase components
+/// and body ID for giant atmospheres. The shader reads the w of its three axes rows.
 pub const PER_BODY: usize = 39;
 /// With the eye near Saturn's ring plane, these follow the bodies: the ring's axes in render axes (9), the eye in the ring's frame
 /// (3, metres from Saturn), the Sun's direction in the ring's frame (3), and Saturn's equatorial and polar radii (2), so that
@@ -126,7 +127,7 @@ pub struct SolarWorld {
     pub star_detail: bool,
     /// The last exposure given to the system star's disk, for the display to state.
     pub star_exposure: f64,
-    /// How stars are drawn: 0 true colour, 1 the familiar composite of filtered views in false colour (the default).
+    /// How stars are drawn: 0 visible continuum (default), 1 the composite of filtered views in false colour.
     pub star_view: u8,
     /// An animated trip under way (solar-core trip.rs): the craft is placed on its path, not flown.
     pub trip: Option<solar_core::trip::Trip>,
@@ -224,7 +225,7 @@ impl SolarWorld {
             star_adapt: true,
             star_detail: true,
             star_exposure: 1.0,
-            star_view: 1,
+            star_view: 0,
             trip: None,
         }
     }
@@ -734,6 +735,12 @@ impl SolarWorld {
         let sun_angle = (s.radius(sun_id) / eye_sun).min(1.).asin();
         out[10] = 1.;
         let star = self.photosphere(sun_id);
+        // Illumination relative to Earth under the Sun before photographic metering.
+        out[36] = ((s.radius(sun_id) / 695_700_000.).powi(2)
+            * (star.teff / 5772.).powi(4)
+            * (149_597_870_700. / eye_sun).powi(2))
+        .clamp(0.0001, 10000.);
+        out[37] = 1.;
         out[33..36].copy_from_slice(&star.tint);
         let mut star_row = None;
         let mut rows: Vec<(f64, Vec<f64>)> = Vec::new();
@@ -810,7 +817,7 @@ impl SolarWorld {
             } else if b.id == sun_id {
                 1.0
             } else {
-                (eye_sun / length(sun_pos).max(1e6)).powi(2).min(4.0)
+                (eye_sun / length(sun_pos).max(1e6)).powi(2).min(32_768.0)
             };
             // Clip rectangle around the bound, with the Sun's glow and the point floor.
             let flag = match d.kind {
@@ -853,6 +860,7 @@ impl SolarWorld {
             };
             if is_star {
                 self.star_exposure = exposure;
+                out[37] = exposure;
             }
             let none = ([0.0; 3], 0.0, [0.0; 3], 0.0);
             let star_air = (
@@ -887,6 +895,10 @@ impl SolarWorld {
                     (self.time.seconds() / 86_400.0).rem_euclid(1000.0),
                     f64::from(b.id),
                 ]);
+            } else if d.kind == BodyKind::Giant {
+                let phase =
+                    (self.time.seconds() / (8.0 * 86_400.)).rem_euclid(1.) * std::f64::consts::TAU;
+                row.extend_from_slice(&[phase.sin(), phase.cos(), f64::from(b.id)]);
             } else {
                 row.extend_from_slice(&[0.0; 3]);
             }
@@ -1125,7 +1137,10 @@ impl SolarWorld {
         ));
         let pole = solar_core::celestial::apply_transpose(&m, [0.0, 1.0, 0.0]);
         let east = normalized(solar_core::celestial::cross(pole, up));
-        let position = mul(up, s.radius(id) + height);
+        let position = mul(
+            up,
+            solar_core::flight::flight_radius(s, id, up, self.time) + height,
+        );
         let velocity = solar_core::celestial::cross(
             solar_core::celestial::spin(&e.rotation, self.time),
             position,
@@ -1139,14 +1154,16 @@ impl SolarWorld {
     pub fn jump_low_sun(&mut self, id: i32, height: f64, elevation: f64) {
         let s = system();
         let body = s.ephemeris.body(id).expect("a body in the table");
-        let radius = s.radius(id);
         let (to_sun, _) = s.ephemeris.relative_state(system_id(id), id, self.time);
         let toward = solar_core::celestial::unit_or(to_sun, [1.0, 0.0, 0.0]);
         let side = normalized(solar_core::celestial::cross(toward, [0.2, 0.3, 0.9]));
         let (sin, cos) = elevation.to_radians().sin_cos();
         // The point whose zenith is `elevation` above the Sun's side of the horizon.
         let zenith = add(mul(toward, sin), mul(side, cos));
-        let position = mul(zenith, radius + height);
+        let position = mul(
+            zenith,
+            solar_core::flight::flight_radius(s, id, zenith, self.time) + height,
+        );
         let along = normalized(sub(toward, mul(zenith, dot(toward, zenith))));
         let view = normalized(add(along, mul(zenith, -0.12)));
         self.craft = Craft::new(
@@ -1211,7 +1228,16 @@ impl SolarWorld {
         let inertial = |v: V3| solar_core::flight::fixed_to_inertial(s, id, v, self.time);
         let (up, north) = (inertial(up), inertial(north));
         let forward = normalized(add(north, mul(up, -1.2)));
-        self.craft = Craft::new(id, mul(up, s.radius(id) + height), [0.0; 3], forward, up);
+        self.craft = Craft::new(
+            id,
+            mul(
+                up,
+                solar_core::flight::flight_radius(s, id, up, self.time) + height,
+            ),
+            [0.0; 3],
+            forward,
+            up,
+        );
         self.looking_at = 0;
     }
     /// Over a place on a body, facing its centre with north up: to see a whole disk at a known height.
@@ -1224,7 +1250,10 @@ impl SolarWorld {
         let (up, north) = (inertial(up), inertial(north));
         self.craft = Craft::new(
             id,
-            mul(up, s.radius(id) + height),
+            mul(
+                up,
+                solar_core::flight::flight_radius(s, id, up, self.time) + height,
+            ),
             [0.0; 3],
             mul(up, -1.0),
             north,
@@ -1286,11 +1315,13 @@ impl SolarWorld {
     pub fn jump_near(&mut self, id: i32, height: f64) {
         let s = system();
         let body = s.ephemeris.body(id).expect("a body in the table");
-        let radius = s.radius(id);
         let (to_sun, _) = s.ephemeris.relative_state(system_id(id), id, self.time);
         let toward = solar_core::celestial::unit_or(to_sun, [1.0, 0.0, 0.0]);
         let day = normalized(add(toward, [0.2, 0.3, 0.1]));
-        let position = mul(day, radius + height);
+        let position = mul(
+            day,
+            solar_core::flight::flight_radius(s, id, day, self.time) + height,
+        );
         self.craft = Craft::new(
             id,
             position,

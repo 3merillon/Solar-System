@@ -21,6 +21,7 @@ for(const group of landmarkGroups){
  const dir='landmarks/'+group;
  files.push(...(await readdir(resolve(root,'web',dir))).filter(f=>/^\d+\.json$/.test(f)).sort().map(f=>dir+'/'+f));
 }
+files.push('saturn-opal-2023b.png','giant-flight.js');
 const hash=b=>createHash('sha256').update(b).digest('hex');
 const wasm=await readFile(resolve(generated,'solar_explorer_bg.wasm'));
 const shaders=await verifyExplorerBuild(resolve(generated,'solar_explorer_bg.wasm'),root);

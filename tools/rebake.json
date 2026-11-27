@@ -332,6 +332,30 @@
    "page": "https://naif.jpl.nasa.gov/naif/data_generic.html",
    "credit": "NASA/JPL, NAIF",
    "optional": "only with --ephemeris-from-kernels"
+  },
+  "saturn-opal-f631n": {
+   "file": "opal/hlsp_opal_hst_wfc3-uvis_saturn-2023b_f631n_v1_globalmap.fits",
+   "url": "https://archive.stsci.edu/hlsps/opal/cycle30/saturn/hlsp_opal_hst_wfc3-uvis_saturn-2023b_f631n_v1_globalmap.fits",
+   "bytes": 6482880,
+   "sha256": "e68d31a06ad23b53e358c336735cc6a36803e6a3e8c5aebd4d81556e96df181a",
+   "page": "https://archive.stsci.edu/hlsp/opal/opal-saturn-cycle-30",
+   "credit": "NASA/ESA HST OPAL, PI A. Simon, STScI"
+  },
+  "saturn-opal-f502n": {
+   "file": "opal/hlsp_opal_hst_wfc3-uvis_saturn-2023b_f502n_v1_globalmap.fits",
+   "url": "https://archive.stsci.edu/hlsps/opal/cycle30/saturn/hlsp_opal_hst_wfc3-uvis_saturn-2023b_f502n_v1_globalmap.fits",
+   "bytes": 6482880,
+   "sha256": "a3de1a64020675f71a8ae65f24980dd540c259b965ef487fb29737964513b82f",
+   "page": "https://archive.stsci.edu/hlsp/opal/opal-saturn-cycle-30",
+   "credit": "NASA/ESA HST OPAL, PI A. Simon, STScI"
+  },
+  "saturn-opal-f395n": {
+   "file": "opal/hlsp_opal_hst_wfc3-uvis_saturn-2023b_f395n_v1_globalmap.fits",
+   "url": "https://archive.stsci.edu/hlsps/opal/cycle30/saturn/hlsp_opal_hst_wfc3-uvis_saturn-2023b_f395n_v1_globalmap.fits",
+   "bytes": 6482880,
+   "sha256": "04d3dd5030069b624bfad395012953a9153118cc36fb4e77affa1e9d23f40b88",
+   "page": "https://archive.stsci.edu/hlsp/opal/opal-saturn-cycle-30",
+   "credit": "NASA/ESA HST OPAL, PI A. Simon, STScI"
   }
  },
  "products": [
@@ -736,6 +760,21 @@
     "--ephemeris-from-kernels": "solar-bake solar on these ten NAIF kernels reproduces the same bytes (checked 17 November 2026 with the copies downloaded on 31 October, which NAIF still serves at the same sizes)."
    },
    "seconds": 0
+  },
+  {
+   "id": "saturn-opal",
+   "kind": "node",
+   "inputs": [
+    "saturn-opal-f631n",
+    "saturn-opal-f502n",
+    "saturn-opal-f395n"
+   ],
+   "script": "Bake-Saturn.mjs",
+   "output": "solar/maps/saturn-opal-2023b.png",
+   "bundled": {
+    "bytes": 268371,
+    "sha256": "c4b715637a1f4ce86a32bc0cc1cf215d56abbaad92923c2ac9854cd6f4da17ab"
+   }
   }
  ],
  "manifests": {

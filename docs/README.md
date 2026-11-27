@@ -87,6 +87,7 @@ been removed (the car's tests went with the car).
 | Document | Status | About |
 | --- | --- | --- |
 | [SOLAR-SYSTEM.md](SOLAR-SYSTEM.md) | Current | Bodies, catalogues, ephemeris, travel, landmarks, stellar travel |
+| [SPACEFLIGHT-VISUAL-PLAN.md](SPACEFLIGHT-VISUAL-PLAN.md) | Implemented and measured | Observed giant-planet weather, volumetric shadows, spacecraft exposure and stellar photospheres |
 | [BAKING.md](BAKING.md) | Current | Rebuilding the data packs from their public sources with one command (`tools/Rebake-Packs.mjs`): cost, what matches byte for byte, the recovered options, pack versions (version 2 of 14 body packs corrects no-data and Mercury's height scale) |
 | [HDR-FINISH.md](HDR-FINISH.md) | Current (16 Nov 2026) | The picture's finish: the linear frame, the AgX tone curve and how it was chosen, bloom, the lens flare |
 | [MUSIC.md](MUSIC.md) | Current (17 Nov 2026) | The score: composed as it plays, tonal harmony in exact fractions of one note (Relative Music Theory), what plays where, how it is made, what was measured |

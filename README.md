@@ -47,8 +47,9 @@ open data. This is version 2 of [Solar-System](#version-1); it replaces the WebG
 - **Listen.** A soundtrack is composed while it plays, in pure intervals tuned to where you
   are; every world has its own note ([docs/MUSIC.md](docs/MUSIC.md)).
 
-The app tells you what is real and what is not. Saturn's colour bands are a placeholder and
-it says so; where a moon has no global map, it says that too.
+Choose **Saturn cloud flyby · October 2013** under **Views and worlds** to follow the rings down into Saturn’s cloud deck. Choose **Jupiter cloud skim** for a side-lit pass over its belts. Press a flight key to take control. Saturn’s orbital weather comes from Hubble observations on 22 October 2023. The fine cloud structure and winds are synthesized. In Display, **Spacecraft camera** meters the sky and planets together. Switch off **Auto exposure** to hold a fixed photographic exposure.
+
+For a close look at a star, choose **Sun · granulation**, **Sun · photospheric limb**, or **Proxima Centauri · photospheric limb**. **Display → Stars** starts in visible light. The filtered composite shows an enhanced chromosphere and coronal loops. Press **O** to toggle orbit guides for photography.
 
 | | |
 | --- | --- |
@@ -116,6 +117,7 @@ The app shows the credits of whatever is in view; the complete list with terms i
 | Buildings, roads, rivers, lakes | [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors, through [OpenFreeMap](https://openfreemap.org/) and OpenMapTiles |
 | Earth from far away | NOAA ETOPO 2022; NASA Earth Observatory's Blue Marble Next Generation |
 | The Moon, Mercury, Venus, Mars, Phobos, the moons of Jupiter and Saturn, Triton, Pluto, Charon | Global mosaics and elevation models distributed by [USGS Astrogeology](https://astrogeology.usgs.gov/), from LRO, MESSENGER, Magellan, Viking, Mars Global Surveyor, Voyager, Galileo, Cassini, Mars Express and New Horizons |
+| Saturn | Hubble OPAL, 22 October 2023. Calibrated visible-filter maps, with obscured latitudes filled. [STScI archive](https://archive.stsci.edu/hlsp/opal/opal-saturn-cycle-30) |
 | Jupiter | Cassini's map of 2000, NASA/JPL/Space Science Institute |
 | The names of surface features | The IAU Working Group for Planetary System Nomenclature's [Gazetteer of Planetary Nomenclature](https://planetarynames.wr.usgs.gov/), kept by USGS Astrogeology |
 | Where everything is, and when | JPL planetary and satellite ephemerides, distributed by NAIF |

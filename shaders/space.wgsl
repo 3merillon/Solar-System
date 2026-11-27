@@ -6,7 +6,7 @@ struct View {
  right:vec4<f32>, up:vec4<f32>, forward:vec4<f32>,
  screen:vec4<f32>, // width, height, aspect, tan half field of view
  icrf:array<vec4<f32>,3>, // render axes from ICRF, rows
- tone:vec4<f32>, // exposure; y: Julian centuries from J2000, for stars' and asteroids' motion; z: the sky's scale; w: asteroids' brightness gain
+ tone:vec4<f32>, // sky radiance scale, negative for the visual sky; y: Julian centuries from J2000, for stars' and asteroids' motion; z: the sky's scale; w: asteroids' brightness gain
  eye_sun:vec4<f32>, // eye against the Sun, ICRF, metres; w: bodies drawn this frame
  starlight:vec4<f32>, // the colour of the system star's light against the Sun's, 1 for Sol
 }
@@ -25,6 +25,8 @@ const FLAG_STAR:f32=1.0;const FLAG_ACTIVE:f32=2.0;const FLAG_GIANT:f32=4.0;const
 @group(0) @binding(1) var<storage,read> bodies:array<Body>;
 @group(0) @binding(2) var maps:texture_2d_array<f32>;
 @group(0) @binding(3) var map_sampler:sampler;
+@group(0) @binding(49) var volume_shape:texture_3d<f32>;
+@group(0) @binding(87) var volume_repeat:sampler;
 @group(0) @binding(4) var<storage,read> stars:array<vec4<f32>>;
 // The sky: NASA's map, sharpened, on a cube in ICRF, which has no poles to pinch. The brightest stars are also points on top.
 @group(0) @binding(7) var sky_map:texture_cube<f32>;
@@ -185,40 +187,17 @@ fn lava(x:vec3<f32>,t:f32)->f32{
 // One megametre as a fraction of the Sun's radius (695.7 Mm). Another star takes the same fractions of its own radius.
 const MM:f32=0.0014374;
 fn hash2(i:vec2<i32>,seed:u32)->u32{return hash32((bitcast<u32>(i.x)*0x8da6b343u)^(bitcast<u32>(i.y)*0xd8163841u)^seed);}
-// The wobble of a closed curve: the gradient noise taken round a circle, so it joins itself.
-fn ring_wobble(theta:f32,turns:f32,seed:f32)->f32{return star_noise(vec3<f32>(cos(theta)*turns,sin(theta)*turns,seed*1.618),seed);}
-// A penumbra's filaments. Not spokes: each is a short bright fibre, about 0.3 Mm across and 2.6 Mm long here (Borrero and
-// Ichimoto 2011, Living Rev. Solar Phys. 8, 4: 0.2 to 0.3 arcsec wide in continuum images; Solanki 2003, A&ARv 11, 153: 0.3 to
-// 0.6 arcsec wide and 0.5 to 2 arcsec long "or longer"; Tiwari et al. 2013: about 5 arcsec for selected ones; 1 arcsec is
-// 0.725 Mm), with a bright head at its inner end (the penumbral grains), fading outward, and a dark core along its axis where
-// it is wide enough on screen to show one (Scharmer et al. 2002, Nature 420, 151). Two layers of such fibres, each fibre
-// with its own length, width and brightness (bright filaments 0.7 to 1.0 of the photosphere, the
-// dark between them 0.3 to 0.7: Solanki 2003), the whole swirled a little. The mean is about 0.8 (penumbrae are 75 to 85% of
-// the quiet Sun: Solanki 2003), which is what is drawn where a fibre is under a pixel. d, theta: the place from the spot's
-// centre; ru, rp: the umbra's and the spot's radius there. The shapes are synthetic.
-fn penumbra(d:f32,theta:f32,ru:f32,rp:f32,hash:u32,across:f32)->f32{
- const LONG:f32=2.6*MM;const PITCH:f32=0.5*MM;
- // The fibres bend: the whole penumbra swirled a little, and each neighbourhood its own way.
- let out=(d-ru)/max(rp-ru,1e-6);
- let bent=theta+((unit_hash(hash>>4u)-0.5)*0.7+0.10*ring_wobble(theta,7.0,f32(hash&255u)+31.0))*out;
- var best=0.0;var seen=0.0;
- for(var l=0;l<2;l++){
-  // Sectors round the spot, one fibre wide at its edge and narrowing toward the umbra as the fibres converge; in each sector
-  // fibres follow one another outward, with that sector's own lengths and starting places, so no two neighbours end together
-  // (a first version on rings drew arcs).
-  let m=max(12.0,floor(6.2831853*rp/PITCH*(1.0+0.37*f32(l))));
-  let a=bent/6.2831853*m+f32(l)*0.37;let sector=floor(a);let fx=a-sector;let wrapped=sector-m*floor(sector/m);
-  let hs=hash2(vec2<i32>(i32(wrapped),l),hash);
-  let jr=d/(LONG*(0.7+0.8*unit_hash(hs>>8u)))+unit_hash(hs);let j=floor(jr);let fy=jr-j;
-  let hc=hash2(vec2<i32>(i32(wrapped),i32(j)*2+l),hash^0x51ed27u);
-  let width=0.55+0.35*unit_hash(hc>>8u);let px=6.2831853*d/m/across;
-  let body=1.0-smoothstep(0.5*width-0.12,0.5*width+0.12,abs(fx-0.5));
-  let ends=smoothstep(0.0,0.10,fy)*(1.0-smoothstep(0.80,1.0,fy));
-  let bright=(0.78+0.27*unit_hash(hc))*(1.0-0.22*fy)+0.30*exp(-fy*6.0);
-  let off=(fx-0.5)/0.09;let core=1.0-0.30*exp(-off*off)*smoothstep(6.0,14.0,px);
-  best=max(best,body*ends*bright*core);seen=max(seen,smoothstep(1.2,3.0,px));
- }
- return mix(0.80,max(0.52,best),seen);
+// The penumbral field is elongated along the local magnetic direction. Its
+// correlation lengths are about 0.3 Mm across a filament and 2.6 Mm along it.
+// Circular coordinates let an entire turn join continuously, including in depth.
+fn penumbral_source(dir:vec2<f32>,d:f32,radius:f32,z:f32,seed:vec3<f32>,field:vec3<f32>,across:f32)->f32{
+ let bend=vec2<f32>(-dir.y,dir.x)*(.16*field.r+.12*(seed.x-.5)*d/radius);
+ let along=d/(8.0*2.6*MM);let height=z/(8.0*.45*MM);
+ let uv=vec3<f32>((dir+bend)*radius/(8.0*.42*MM),along+height)+seed;
+ let fibre=textureSampleLevel(volume_shape,volume_repeat,uv,0.0);
+ let knots=textureSampleLevel(volume_shape,volume_repeat,uv*1.83+fibre.gbr*.19,0.0);
+ let resolved=1.0-smoothstep(.09*MM,.55*MM,across);
+ return .78+resolved*(.48*(fibre.r-.5)+.19*(knots.a-.45))+.10*field.g;
 }
 // A sunspot, from what is observed (the shapes are synthetic; the numbers are cited where they are used). Its outline and its
 // umbra's are closed curves that wander, not circles; the outer edge frays into the granules; the umbra's edge is ragged where
@@ -228,52 +207,83 @@ fn penumbra(d:f32,theta:f32,ru:f32,rp:f32,hash:u32,across:f32)->f32{
 // sectors. The umbra is 20 to 30% of the quiet photosphere (Solanki 2003; darker in a large spot), with umbral dots (bright
 // points a few hundred km across: Solanki 2003 lists estimates from 80 to 650 km) and, in a quarter of the spots, a light bridge
 // (a bright lane with grains and a dark central line: Borrero and Ichimoto 2011, section 3.1.4; its width here, 0.7 Mm, is a
-// choice: no width was found in a source). The umbra is seen shifted toward the disk centre near the limb: it lies in a
-// depression (the Wilson effect; 400 to 800 km for mature spots, Solanki 2003). Returns the brightness factor.
-// t: the offset on the tangent plane (radii); across: a pixel in radii; view: the eye's direction projected onto the tangent
-// plane (the sine of the view angle long); age: the region's, 0 to 1 over its life.
-fn sunspot(t:vec2<f32>,radius:f32,hash:u32,across:f32,view:vec2<f32>,strength:f32,age:f32)->f32{
- let d=length(t);if d>radius*1.5||radius<=0.0{return 1.0;}
- let theta=atan2(t.y,t.x);let seed=f32(hash&1023u);let size=radius/MM;
- // The umbra, shifted by the depression.
- let tu=t+view*radius*0.25;let du=length(tu);let thu=atan2(tu.y,tu.x);
- var ru=radius*0.42*(1.0+0.34*ring_wobble(thu,1.4,seed+3.0)+0.14*ring_wobble(thu,3.6,seed+4.0));
+// choice). The thermal deficit and Wilson depression are functions of position in the rotating plasma.
+// Their two components give the continuum source deficit and the downward shift in optical depth, in radii.
+fn sunspot(offset:vec2<f32>,radius:f32,hash:u32,across:f32,z:f32,age:f32)->vec2<f32>{
+ if radius<=0.0 || dot(offset,offset)>radius*radius*2.72{return vec2<f32>(0);}
+ let scale=max(radius,MM);
+ let seed=vec3<f32>(unit_hash(hash),unit_hash(hash>>7u),unit_hash(hash>>14u));
+ let uv=vec3<f32>(offset/(scale*2.0),z/(scale*.65))+seed;
+ let field=textureSampleLevel(volume_shape,volume_repeat,uv,0.0).rgb-.5;
+ // A flux concentration fans out slightly with height and has a structured wall.
+ let t=offset/(1.0+.09*clamp(z/scale,-1.0,1.0))+field.rg*min(.38*MM,.12*radius);
+ let d=length(t);
+ let dir=t/max(d,1e-8);let size=radius/MM;
+ let shape=textureSampleLevel(volume_shape,volume_repeat,seed+vec3<f32>(dir*.26,z/(8.0*MM)),0.0).rgb-.5;
+ var ru=radius*.42*(1.0+.40*shape.r+.15*field.r);
  // The penumbra: none for a pore or a spot too young, gone in sectors from an old one.
  let grown=smoothstep(1.75,3.2,size)*smoothstep(0.02,0.10,age);
- let sector=smoothstep(-0.15,0.15,ring_wobble(theta,0.9,seed+5.0)*0.5+0.5-smoothstep(0.55,1.0,age)*0.9);
+ let sector=smoothstep(-.15,.15,shape.b+.5-smoothstep(.55,1.0,age)*.9);
  let has=grown*sector;
- let wide=radius*(1.0+0.22*ring_wobble(theta,1.3,seed+1.0)+0.09*ring_wobble(theta,3.1,seed+2.0));
- if has<0.5{ru=ru*1.25;}
+ let wide=radius*(1.0+.34*shape.g+.17*field.g);
+ ru*=1.25-.25*has;
  let rp=mix(ru*1.10,wide,has);
- let edge=across*1.2;
+ let edge=max(across*1.2,min(.13*MM,radius*.1));
  // The outer edge frays at the scale of a granule; the umbra's at the scale of a filament.
- let fray=0.9*MM*star_noise(vec3<f32>(t/(1.1*MM),seed),5.0)*smoothstep(0.5,2.0,1.1*MM/across);
- let pen=1.0-smoothstep(rp+fray-edge,rp+fray+edge,d);
- if pen<=0.0{return 1.0;}
- let ragged=0.45*MM*star_noise(vec3<f32>(tu/(0.45*MM),seed+9.0),6.0)*smoothstep(0.5,2.0,0.45*MM/across);
- let umb=1.0-smoothstep(ru+ragged-edge,ru+ragged+edge,du);
- var pb=mix(0.78,penumbra(d,theta,ru,rp,hash,across),has);
+ let fine=textureSampleLevel(volume_shape,volume_repeat,seed+vec3<f32>(t/(8.0*MM),z/(3.0*MM)),0.0).rgb-.5;
+ let fray=1.2*MM*fine.g*smoothstep(.5,2.0,MM/across);
+ let wall=max(edge,.085*radius);
+ let pen=1.0-smoothstep(rp+fray-wall,rp+fray+wall,d);
+ if pen<=0.0{return vec2<f32>(0);}
+ let ragged=.72*MM*fine.r*smoothstep(.5,2.0,.45*MM/across);
+ let umb=1.0-smoothstep(ru+ragged-wall,ru+ragged+wall,d);
+ var pb=.80;
+ if umb<.999 && has>.001{pb=mix(.78,penumbral_source(dir,d,radius,z,seed,field,across),has);}
  // The umbra: darker in a larger spot; a pore is lighter.
- var ub=mix(0.42,0.20,smoothstep(1.5,12.0,size));
+ var ub=mix(0.42,0.20,smoothstep(1.5,12.0,size))+.065*field.b;
  // Umbral dots: one to a cell of 0.55 Mm, in about four cells of ten, fewer toward the dark middle.
  let cell=0.55*MM;let dots_seen=smoothstep(0.6,2.0,0.2*MM/across);
  if dots_seen>0.0&&umb>0.0{
-  let g=tu/cell;let id=floor(g);let hd=hash2(vec2<i32>(id),hash^0x2545f491u);
+  let g=t/cell;let id=floor(g);let hd=hash2(vec2<i32>(id),hash^0x2545f491u);
   if unit_hash(hd)<0.42{
    let at=id+vec2<f32>(0.3+0.4*unit_hash(hd>>8u),0.3+0.4*unit_hash(hd>>16u));let off=(g-at)/(0.16+0.12*unit_hash(hd>>4u));
-   ub+=(0.16+0.22*unit_hash(hd>>12u))*exp(-dot(off,off))*dots_seen*smoothstep(0.1,0.7,du/max(ru,1e-6));
+   ub+=(0.16+0.22*unit_hash(hd>>12u))*exp(-dot(off,off))*dots_seen*smoothstep(0.1,0.7,d/max(ru,1e-6));
   }
  }
  // A light bridge: a bright lane across the umbra, a little curved, grained along its length, a dark line down its middle.
  if (hash&3u)==0u&&size>4.0{
-  let turn=unit_hash(hash>>8u)*6.2831853;let dir=vec2<f32>(cos(turn),sin(turn));
-  let along=dot(tu,dir);let side=dot(tu,vec2<f32>(-dir.y,dir.x))+0.18*ru*sin(along/max(ru,1e-6)*2.3+turn);
+  let turn=unit_hash(hash>>8u)*6.2831853;let axis=vec2<f32>(cos(turn),sin(turn));
+  let along=dot(t,axis);let side=dot(t,vec2<f32>(-axis.y,axis.x))+0.18*ru*sin(along/max(ru,1e-6)*2.3+turn)+.65*MM*fine.b;
   let half=0.35*MM*(0.8+0.4*unit_hash(hash>>12u));let lane=1.0-smoothstep(half-edge,half+edge,abs(side));
-  let grain=0.62+0.26*star_noise(vec3<f32>(along/(0.6*MM),side/(0.4*MM),seed),8.0);
+  let grain=.62+.34*fine.g;
   let line=1.0-0.28*exp(-(side*side)/(0.0064*MM*MM))*smoothstep(4.0,10.0,2.0*half/across);
   ub=mix(ub,grain*line,lane);
  }
- return mix(1.0,mix(pb,ub,umb),pen*strength);
+ let depression=MM*mix(.12,.62,smoothstep(1.5,12.0,size))*mix(.27,1.0,umb);
+ return vec2<f32>(1.0-mix(pb,ub,umb),depression)*pen;
+}
+
+struct MagneticSpot {at:vec2<f32>,radius:f32,key:u32}
+fn region_spot(r:Region,k:u32)->MagneticSpot{
+ let sep=(.025+.04*r.size)*r.life;
+ let lead=.010+.018*r.size;let follow=lead*(.45+.4*unit_hash(r.hash>>5u));
+ let behind=vec2<f32>(sep,sep*.25*unit_hash(r.hash>>9u));
+ if k==0u{return MagneticSpot(vec2<f32>(sep,0),lead*r.life,r.hash);}
+ if k==1u{return MagneticSpot(-behind,follow*r.life,r.hash>>3u);}
+ if k==2u{return MagneticSpot(-behind-vec2<f32>(.3,.9)*follow*(1.2+unit_hash(r.hash>>13u)),follow*.45*r.life,r.hash>>6u);}
+ let hk=hash32(r.hash^((k-3u)*0x2545f491u));
+ let at=vec2<f32>(mix(-1.2*sep,1.2*sep,unit_hash(hk)),(unit_hash(hk>>16u)-.5)*sep*.9);
+ return MagneticSpot(at,(.6+1.2*unit_hash(hk>>8u))*MM*r.life,hk);
+}
+fn magnetic_region(r:Region,t:vec2<f32>,z:f32,across:f32,mask:u32)->vec2<f32>{
+ var field=vec2<f32>(0);var remaining=mask;
+ while remaining!=0u{
+  let k=firstTrailingBit(remaining);remaining&=remaining-1u;
+  let spot=region_spot(r,k);
+  let material=sunspot(t-spot.at,spot.radius,spot.key,across,z,r.age);
+  field=max(field,material*select(1.0,.9,k>=3u));
+ }
+ return field;
 }
 // Granules. The cells' edges are warped by a smooth noise so granules are rounded and irregular, not polygons, and the warp
 // drifts with the clock, so cells flow, swell and split between generations instead of only fading. x0: the place in granule
@@ -295,10 +305,36 @@ fn granule_place(b:Body,q:vec3<f32>,near:vec3<f32>)->Place{
  if u32(b.axes[2].w)==u32(star_field.star.x){return Place(vec3<i32>(star_field.cells[0].xyz),star_field.cells[1].xyz+near/cell);}
  let x=q/cell;let whole=floor(x);return Place(vec3<i32>(whole),x-whole);
 }
-fn granules(at:Place,warp:vec3<f32>,phase:f32)->Granules{
+// Advect one coherent network of thermal cells. A site's position evolves
+// between successive lifetimes, so its dark boundary moves with the upflow.
+fn continuum_cells(at:Place,warp:vec3<f32>,phase:f32,seed:u32)->vec3<f32>{
+ let position=vec3<f32>(at.base)+at.x;
+ let phase_angle=phase*(2.0*PI/16.0);
+ let drift=vec3<f32>(sin(phase_angle),cos(phase_angle),sin(2.0*phase_angle))*.16;
+ let corrugation=textureSampleLevel(volume_shape,volume_repeat,position*.37+drift,0.0).rgb-.5;
+ let p=at.x+warp+.19*corrugation;let c=vec3<i32>(floor(p));let f=fract(p);
+ let generation=u32(floor(phase))&4095u;let w=smoothstep(0.0,1.0,fract(phase));
+ var first=8.0;var second=8.0;var brightness=0.0;
+ for(var z=-1;z<=1;z++){for(var y=-1;y<=1;y++){for(var x=-1;x<=1;x++){
+  let offset=vec3<i32>(x,y,z);let n=vec3<u32>(at.base+c+offset);
+  let key=(n.x*0x8da6b343u)^(n.y*0xd8163841u)^(n.z*0xcb1ab31fu)^seed;
+  let a=hash32(key^(generation*2654435761u));let b=hash32(key^(((generation+1u)&4095u)*2654435761u));
+  let left=vec3<f32>(vec3<u32>(a,a>>10u,a>>20u)&vec3<u32>(1023u))/1023.0;
+  let right=vec3<f32>(vec3<u32>(b,b>>10u,b>>20u)&vec3<u32>(1023u))/1023.0;
+  let j=mix(left,right,w);let delta=vec3<f32>(offset)+.08+.84*j-f;
+  let d=dot(delta,delta);
+  if d<first{second=first;first=d;brightness=unit_hash(hash32(key));}else{second=min(second,d);}
+ }}}
+ let r=sqrt(first);return vec3<f32>(r,sqrt(second)-r,brightness);
+}
+fn granules(b:Body,at:Place,warp:vec3<f32>,phase:f32)->Granules{
+ if b.axes[0].w<.5{
+  let site=continuum_cells(at,warp,phase,u32(b.axes[2].w));
+  return Granules(site,site,0.0);
+ }
  let n=u32(floor(phase))&4095u;
- let a=star_cells_at(at.base,at.x+warp,n*2654435761u);let c=star_cells_at(at.base,at.x+warp+vec3<f32>(17.3,5.1,-9.7),((n+1u)&4095u)*2654435761u);
- return Granules(vec3<f32>(a.x,a.y-a.x,a.z),vec3<f32>(c.x,c.y-c.x,c.z),0.5-0.5*cos(6.2831853*fract(phase)));
+ let a=star_cells_at(at.base,at.x+warp,n*2654435761u);let c=star_cells_at(at.base,at.x+warp,((n+1u)&4095u)*2654435761u);
+ return Granules(vec3<f32>(a.x,a.y-a.x,a.z),vec3<f32>(c.x,c.y-c.x,c.z),smoothstep(0.0,1.0,fract(phase)));
 }
 // Their brightness: each cell bright in its middle with a narrow dark lane round it, each granule its own brightness. About 0
 // (a lane) to 1.2 (a bright middle); its mean is 0.68 (measured on 400,000 random places, rms 0.33 about it).
@@ -326,7 +362,7 @@ fn granule_height(g:Granules)->f32{
 const RELIEF_GRANULE:f32=0.25;const RELIEF_BOIL:f32=0.25;const RELIEF_BOUND:f32=0.3125;
 fn star_depth(b:Body,q:vec3<f32>,near:vec3<f32>,across:f32,mu:f32,warp:vec3<f32>,scale:f32)->f32{
  var depth=0.0;let cell=b.beta.w;let slant=sqrt(max(mu,0.05));let pixels=cell/across*slant;
- if pixels>0.8{depth+=cell*RELIEF_GRANULE*(1.0-granule_height(granules(granule_place(b,q,near),warp,b.sun.w)))*smoothstep(0.8,6.0,pixels);}
+ if pixels>0.8{depth+=cell*RELIEF_GRANULE*(1.0-granule_height(granules(b,granule_place(b,q,near),warp,b.sun.w)))*smoothstep(0.8,6.0,pixels);}
  // The boiling's scales, as star_detail draws them, but only from where a cell spans 24 pixels (smaller, its relief would move
  // the picture by a pixel or two and cost as much as the granules'); a scale keeps its relief once its cells have outgrown the
  // screen (its brightness fades there, its ground does not).
@@ -334,7 +370,7 @@ fn star_depth(b:Body,q:vec3<f32>,near:vec3<f32>,across:f32,mu:f32,warp:vec3<f32>
  let clock=b.sun.w;var size=cell*0.2;var turn=pow(5.0,0.6667);
  for(var k=0u;k<10u;k++){
   let span=size/across*slant;
-  if span<24.0{break;}
+  if span<24.0 || (b.axes[0].w<.5 && size<cell*.08){break;}
   let life=clock*min(turn,25.0);let gen=floor(life);let t=fract(life);let w=t*t*(3.0-2.0*t);
   let x=select(q/size,near/star_field.octaves[k].w+star_field.octaves[k].xyz,anchored);let o1=vec3<f32>(fract(gen*0.618)*91.0,fract(gen*0.381)*57.0,f32(k)*13.0);let o2=vec3<f32>(fract((gen+1.0)*0.618)*91.0,fract((gen+1.0)*0.381)*57.0,f32(k)*13.0);
   let v=mix(abs(periodic_noise(x+o1,31u+k)),abs(periodic_noise(x+o2,31u+k)),w);
@@ -346,9 +382,9 @@ fn star_depth(b:Body,q:vec3<f32>,near:vec3<f32>,across:f32,mu:f32,warp:vec3<f32>
 // Synthetic photosphere: granulation, the supergranular network's faculae, active regions' spots, plage and flare ribbons, all a
 // labelled model with measured sizes and contrasts (stars.rs and the doc give the sources), on and off with the star's own switch.
 // q: the point on the unit sphere in the star's fixed axes; mu: cosine to the eye; across: one pixel at that point as a fraction of
-// the radius; e: the direction to the eye in fixed axes; warp: the granules' warp there (granule_warp). Returns the brightness
+// the radius; warp: the granules' warp there (granule_warp). Returns the brightness
 // factor and, in w, the flare ribbons' light.
-fn star_detail(b:Body,q:vec3<f32>,mu:f32,across:f32,e:vec3<f32>,count:u32,near:vec3<f32>,warp:vec3<f32>)->vec4<f32>{
+fn star_detail(b:Body,q:vec3<f32>,mu:f32,across:f32,count:u32,near:vec3<f32>,warp:vec3<f32>,orbital:bool)->vec4<f32>{
  var gain=1.0;let strength=b.sun.x;let activity=abs(b.sun.y);let seed=u32(b.axes[2].w);
  // Granules (granule_bright), seen only when a cell spans pixels; their contrast falls toward the limb, as observed. Offset by
  // the pattern's mean (0.68), so the disk's mean is kept as they come into view. Observed rms contrast for comparison: 7% at
@@ -358,10 +394,20 @@ fn star_detail(b:Body,q:vec3<f32>,mu:f32,across:f32,e:vec3<f32>,count:u32,near:v
  if pixels>0.8{
   let phase=b.sun.w;let n=u32(floor(phase))&4095u;
   let x0=q/cell;let flow=vec3<f32>(phase*0.21,-phase*0.17,phase*0.13);
-  let shape=granule_bright(granules(granule_place(b,q,near),warp,phase),x0);let fine=0.10*star_noise(x0*3.7,6.0);
+  let g=granules(b,granule_place(b,q,near),warp,phase);
+  let shape=granule_bright(g,x0);let fine=0.20*star_noise(x0*3.7,6.0);
   // A finer, faster octave where it spans pixels: granules fragmenting and the bright points in the lanes.
   var finer=0.0;
-  if pixels>4.0{let f=star_cells(x0*2.7+warp*1.3+flow*2.0,(n*7919u)^seed);finer=(smoothstep(0.0,0.12,f.y-f.x)-0.9)*0.35*smoothstep(4.0,12.0,pixels);}
+  if pixels>4.0 && b.axes[0].w>.5{let f=star_cells(x0*2.7+warp*1.3+flow*2.0,(n*7919u)^seed);finer=(smoothstep(0.0,0.12,f.y-f.x)-0.9)*0.35*smoothstep(4.0,12.0,pixels);}
+  if pixels>4.0 && b.axes[0].w<.5{
+   let grain=star_noise(x0*2.6+warp*.4,19.0);
+   let thermal=star_noise(x0*1.7+warp,37.0);
+   // A cooling downflow can open within a large upflow; brighter magnetic
+   // elements occupy a small area of mature intergranular lanes.
+   let split=exp(-60.0*thermal*thermal)*smoothstep(.43,.85,g.a.z)*smoothstep(.13,.36,g.a.y);
+   let points=(1.0-smoothstep(.025,.10,g.a.y))*smoothstep(.28,.63,grain);
+   finer=(points*.46-split*.28+grain*.13)*smoothstep(4.0,10.0,pixels);
+  }
   var molten=0.0;
   // Bright molten veins: the lava field's ridges (where it crosses its middle), sharpened.
   if b.axes[0].w>0.5{let l=lava(x0*0.8,phase*2.5);let vein=1.0-abs(2.0*l-1.0);molten=(vein*vein*vein-0.3)*1.1+(l-0.5)*0.5;}
@@ -378,10 +424,10 @@ fn star_detail(b:Body,q:vec3<f32>,mu:f32,across:f32,e:vec3<f32>,count:u32,near:v
   // `near`: the point met against the CPU's anchor near the eye, in fixed axes and radii (small, so precise); each octave's
   // cells are counted from the anchor's place in them (star_field.octaves). Only for the star the field was computed for.
   let anchored=u32(b.axes[2].w)==u32(star_field.star.x);
-  let clock=b.sun.w;var size=cell*0.2;var turn=pow(5.0,0.6667);let amp=0.22;
+  let clock=b.sun.w;var size=cell*0.2;var turn=pow(5.0,0.6667);let amp=select(.055,.22,b.axes[0].w>.5);
   for(var k=0u;k<10u;k++){
    let span=size/across*sqrt(max(mu,0.05));
-   if span<1.5{break;}
+   if span<1.5 || (b.axes[0].w<.5 && size<cell*.08){break;}
    let seen=smoothstep(1.5,5.0,span)*(1.0-smoothstep(400.0,2400.0,span));
    if seen>0.0{
     let life=clock*min(turn,25.0);let gen=floor(life);let t=fract(life);let w=t*t*(3.0-2.0*t);
@@ -401,24 +447,19 @@ fn star_detail(b:Body,q:vec3<f32>,mu:f32,across:f32,e:vec3<f32>,count:u32,near:v
   gain+=lane*broken*0.07*pow(1.0-mu,1.5)*smoothstep(1.5,5.0,bigpixels)*strength*min(activity,2.0);
  }
  // Active regions.
- let view=e-q*dot(e,q);var ribbon=0.0;
+ var ribbon=0.0;
  for(var i=0u;i<count;i++){
   let r=region_at(i);if r.life<=0.001{continue;}
   let toc=q-r.centre;let reach=0.06+0.08*r.size;if dot(toc,toc)>reach*reach*4.0{continue;}
-  let t=vec2<f32>(dot(toc,r.east),dot(toc,r.north));let v=vec2<f32>(dot(view,r.east),dot(view,r.north));
+  let t=vec2<f32>(dot(toc,r.east),dot(toc,r.north));
   let sep=(0.025+0.04*r.size)*r.life;
   // Plage and faculae round the region, brighter toward the limb (the network's own contrast law).
   let plage=exp(-dot(t,t)/(reach*reach*0.6))*(0.03+0.16*pow(1.0-mu,1.2))*(0.6+0.4*star_noise(q*180.0,f32(i)));
   gain+=plage*r.life*strength;
-  // The leader (larger, toward the equator and ahead), the follower, and pores between.
-  let lead=0.010+0.018*r.size;let follow=lead*(0.45+0.4*unit_hash(r.hash>>5u));
-  // The follower is the more broken of the two: a smaller spot with a fragment beside it; pores lie between and round them.
-  gain*=sunspot(t-vec2<f32>(sep,0.0),lead*r.life,r.hash,across,v,strength,r.age);
-  let behind=vec2<f32>(sep,sep*0.25*unit_hash(r.hash>>9u));
-  gain*=sunspot(t+behind,follow*r.life,r.hash>>3u,across,v,strength,r.age);
-  gain*=sunspot(t+behind+vec2<f32>(0.3,0.9)*follow*(1.2+unit_hash(r.hash>>13u)),follow*0.45*r.life,r.hash>>6u,across,v,strength,r.age);
-  for(var k=0u;k<5u;k++){let hk=hash32(r.hash^(k*0x2545f491u));let at=vec2<f32>(mix(-1.2*sep,1.2*sep,unit_hash(hk)),(unit_hash(hk>>16u)-0.5)*sep*0.9);
-   gain*=sunspot(t-at,(0.6+1.2*unit_hash(hk>>8u))*MM*r.life,hk,across,v,strength*0.9,r.age);}
+  if orbital{
+   let deficit=strength*magnetic_region(r,t,0.0,across,255u).x;
+   gain=mix(gain,1.0,.88*clamp(deficit/.68,0.0,1.0))*(1.0-deficit);
+  }
   // Flare ribbons: the feet of the arcade (a loop's feet stand at 0.70 of its half width), two wavy lanes either side of the
   // line between the polarities that move apart as the arcade grows, with brighter kernels along them; brightest in the flash,
   // an afterglow while the arcade lasts.
@@ -430,7 +471,9 @@ fn star_detail(b:Body,q:vec3<f32>,mu:f32,across:f32,e:vec3<f32>,count:u32,near:v
    ribbon+=(r.impulse+0.12*r.life*exp(-r.phase/4.0))*exp(-lane*lane/(thin*thin))*kernels*(1.0-smoothstep(0.65,0.95,abs(t.y)/sep));
   }
  }
- return vec4<f32>(vec3<f32>(gain),ribbon*strength);
+ // At optical wavelengths the blue continuum responds more strongly to a temperature fluctuation.
+ let continuum=pow(vec3<f32>(max(.01,gain)),vec3<f32>(.87,1.0,1.16));
+ return vec4<f32>(select(continuum,vec3<f32>(gain),b.axes[0].w>.5),ribbon*strength);
 }
 // The "familiar" photosphere: the disk as the well-known filtered pictures show it, an orange to yellow-white ramp on brightness
 // (in the manner of SDO/HMI continuum and solar-filter photographs). A display choice, labelled on screen as false colour.
@@ -528,7 +571,7 @@ fn star_atmosphere(b:Body,o:vec3<f32>,rd:vec3<f32>,hit:f32,px:f32,height:f32,c2:
  // along the grazing ray (sqrt(2 pi H) at the limb), widened to the pixel's footprint so the rim never aliases. Spicules: radial
  // jets about 0.5 Mm wide and 5 to 10 Mm tall, as a direction noise that fades when they are under a pixel.
  let R=b.center.w;let foot=max(height,1e-7)*px;
- let H=max(1.5e6/R,foot*0.5);
+ let H=max(1.5*b.beta.w,foot*0.5);
  // The lowest point of the ray ahead of the eye: its closest approach, or the eye itself when that lies behind; over the disk, the
  // photosphere, seen through the layer's slant (1 / mu, capped at the limb's grazing path, so the rim runs on across the limb).
  let ahead=along>0.0;let low=select(o,closest,ahead);let rmin=select(1.0+height,p,ahead);
@@ -537,8 +580,8 @@ fn star_atmosphere(b:Body,o:vec3<f32>,rd:vec3<f32>,hit:f32,px:f32,height:f32,c2:
  // From inside the layer looking up and out: the path from the eye, H over the cosine to the zenith, not a grazing line.
  if !ahead{let up=max(-along/(1.0+height),1e-3);chromo=min(H/up,sqrt(6.2831853*H)*0.5)*exp(-height/H);}
  if hit>0.0{let nh=normalize(o+rd*hit);let mu_hit=max(-dot(nh,rd),1e-3);chromo=min(H/mu_hit,sqrt(6.2831853*H));}
- let cf=normalize(fixed(b,low));let spic_w=0.5e6/R;let spic=smoothstep(1.0,3.0,spic_w/foot);
- let jets=pow(0.5+0.5*star_noise(cf*(R/0.9e6),17.0),6.0);let tall=(6e6/R)*(0.5+jets);
+ let cf=normalize(fixed(b,low));let spic_w=.5*b.beta.w;let spic=smoothstep(1.0,3.0,spic_w/foot);
+ let jets=pow(0.5+0.5*star_noise(cf/(.9*b.beta.w),17.0),6.0);let tall=6.0*b.beta.w*(0.5+jets);
  chromo+=spic*jets*0.5*line*sqrt(6.2831853*tall)*exp(-max(rmin-1.0,0.0)/tall)*0.5*select(1.0,0.0,hit>0.0);
  // Prominences and loops.
  var prom=0.0;var trans=1.0;var loops=vec2<f32>(0.0);
@@ -550,7 +593,7 @@ fn star_atmosphere(b:Body,o:vec3<f32>,rd:vec3<f32>,hit:f32,px:f32,height:f32,c2:
   if i<count{let g=region_at(i);if g.life<=0.001{continue;}lifev=g.life;erupt=g.phase;
    let east_r=b.axes[0].xyz*g.east.x+b.axes[1].xyz*g.east.y+b.axes[2].xyz*g.east.z;let north_r=b.axes[0].xyz*g.north.x+b.axes[1].xyz*g.north.y+b.axes[2].xyz*g.north.z;
    let centre_r=b.axes[0].xyz*g.centre.x+b.axes[1].xyz*g.centre.y+b.axes[2].xyz*g.centre.z;
-   loops+=region_loops(o,rd,hit,centre_r,east_r,north_r,(0.025+0.04*g.size)*g.life,g,foot);
+   if familiar{loops+=region_loops(o,rd,hit,centre_r,east_r,north_r,(0.025+0.04*g.size)*g.life,g,foot);}
    // A filament along the line between the polarities: in the plane through the centre and that line.
    c=g.centre;n=g.east;span=0.05+0.05*g.size;height=(0.02+0.03*g.size);bright=1.0;}
   else{let h=hash32(seed^((i-count)*0x51ed27u+7u));let lat=(40.0+20.0*unit_hash(h))*select(-1.0,1.0,(h&1u)!=0u)*0.0174533;let lon=unit_hash(h>>8u)*6.2831853+days*0.004;
@@ -589,7 +632,7 @@ fn star_atmosphere(b:Body,o:vec3<f32>,rd:vec3<f32>,hit:f32,px:f32,height:f32,c2:
   // The path in slab thicknesses; held to twelve, as the thin sheet's edge-on brightening was.
   let sheet=min(sum/5.0*(s1-s0)/thick,12.0)*lifev*fade;
   // Against the disk a prominence is a dark filament: it dims what is behind and adds little light of its own.
-  prom+=sheet*bright*(1.0+2.0*smoothstep(0.0,1.0,erupt))*select(1.0,0.1,hit>0.0);trans*=exp(-sheet*0.12);
+  prom+=sheet*bright*(1.0+2.0*smoothstep(0.0,1.0,erupt))*select(1.0,0.1,hit>0.0);trans*=exp(-sheet*select(.00015,.12,familiar));
  }
  // Colour and scale by view. True colour: what an eye would see, so everything is a millionth of the disk and shows only with the
  // disk covered (chromosphere and prominences at about 3e-5 and 1e-5 of the disk centre, a choice of the order of eclipse
@@ -663,7 +706,130 @@ fn region_loops(o:vec3<f32>,rd:vec3<f32>,hit:f32,cr:vec3<f32>,east:vec3<f32>,nor
  }
  return light;
 }
-fn star(b:Body,rd:vec3<f32>)->vec4<f32>{
+// Visible-continuum formation at the very near limb. The opacity scale is a
+// fraction of a granule, so it follows the catalogued T/g scale for each star.
+// Optical depth grows continuously downward. The source function follows the
+// star's wavelength-dependent limb coefficients (Eddington-Barbier approximation).
+fn column_magnetic_field(p:vec3<f32>,across:f32,regions:u32,spots:vec3<u32>)->vec2<f32>{
+ let radius=length(p);let q=p/radius;
+ var remaining=regions;var field=vec2<f32>(0);
+ while remaining!=0u{
+  let idx=firstTrailingBit(remaining);remaining&=remaining-1u;
+  let r=region_at(idx);let v=q-r.centre;
+  let t=vec2<f32>(dot(v,r.east),dot(v,r.north));
+  let mask=(spots[idx>>2u]>>((idx&3u)*8u))&255u;
+  field=max(field,magnetic_region(r,t,radius-1.0,across,mask));
+ }
+ return field;
+}
+struct PhotosphericColumn {color:vec4<f32>,distance:f32,magnetic:f32}
+fn photospheric_column(b:Body,along:f32,c2:f32,eye:vec3<f32>,dir:vec3<f32>,pixel:f32,count:u32)->PhotosphericColumn{
+ let h=.105*b.beta.w;let top=10.0*h;let bottom=-5.0*h-.65*MM;
+ let outside=c2-top*(2.0+top);let det=along*along-outside;
+ if det<=0.0 || (outside>=0.0 && along<=0.0){return PhotosphericColumn(vec4<f32>(0),0.0,0.0);}
+ let root=sqrt(det);var t=max(0.0,outside/max(along+root,1e-9));
+ var end=along+root;let deep=c2-bottom*(2.0+bottom);let lower=along*along-deep;
+ if deep>0.0 && lower>0.0 && along>0.0{end=min(end,deep/(along+sqrt(lower)));}
+ var regions=0u;var spots=vec3<u32>(0);
+ if b.sun.x>.0001{
+  for(var j=0u;j<count;j++){
+   let r=region_at(j);let closest=clamp(dot(r.centre-eye,dir),t,end);
+   let delta=eye+dir*closest-r.centre;
+   let reach=(.035+.05*r.size)*r.life+(.01+.018*r.size)*1.8+top+.65*MM;
+   if r.life<=.001 || dot(delta,delta)>reach*reach{continue;}
+   let start=eye+dir*t-r.centre;
+   let origin=vec2<f32>(dot(start,r.east),dot(start,r.north));
+   let path=vec2<f32>(dot(dir,r.east),dot(dir,r.north))*(end-t);
+   var mask=0u;
+   for(var k=0u;k<8u;k++){
+    let spot=region_spot(r,k);let offset=spot.at-origin;
+    let nearest=offset-path*clamp(dot(offset,path)/max(dot(path,path),1e-12),0.0,1.0);
+    // Allow for projecting the whole photospheric shell onto the tangent plane.
+    let extent=1.65*spot.radius+.20*max(top,-bottom)+.13*MM;
+    if dot(nearest,nearest)<=extent*extent{mask|=1u<<k;}
+   }
+   if mask!=0u{regions|=1u<<j;spots[j>>2u]|=mask<<((j&3u)*8u);}
+  }
+ }
+ // Interpolate the magnetic material along the ray. The smaller fixed physical
+ // interval resolves the wall and umbral dots where optical-depth steps get long.
+ let interval=max(.12*MM,pixel*t*.6);
+ var field_lo=vec2<f32>(0);var field_hi=vec2<f32>(0);var field_end=t;
+ if regions!=0u{field_hi=column_magnetic_field(eye+dir*t,max(t*pixel,.015*MM),regions,spots);}
+ var transmission=1.0;var emission=vec3<f32>(0);var moment=0.0;
+ var depression=0.0;var magnetic=0.0;
+ for(var i=0u;i<192u;i++){
+  if t>=end || transmission<.0005{break;}
+  let g=c2+t*(t-2.0*along);let radius=sqrt(max(0.0,1.0+g));
+  let z=g/(1.0+radius);
+  let opacity=exp(clamp(-(z+depression)/h,-14.0,9.0));
+  // Bound both the change in altitude and the optical thickness of each
+  // interval. The first samples stay in place when the ray grazes the lower limit.
+  let slant=max(abs(t-along)/max(radius,1e-6),sqrt(2.0*h));
+  let ds=min(end-t,h*min(.46/slant,.42/opacity));
+  let at=t+.5*ds;let gm=c2+at*(at-2.0*along);
+  var deficit=0.0;
+  if regions!=0u{
+   if at>=field_end{
+    let skip=floor((at-field_end)/interval);
+    field_end+=(skip+1.0)*interval;field_lo=field_hi;
+    let footprint=max(at*pixel,.015*MM);
+    if skip>0.0{field_lo=column_magnetic_field(eye+dir*(field_end-interval),footprint,regions,spots);}
+    field_hi=column_magnetic_field(eye+dir*field_end,footprint,regions,spots);
+   }
+   let field=mix(field_lo,field_hi,clamp(1.0-(field_end-at)/interval,0.0,1.0))*b.sun.x;
+   deficit=field.x;depression=field.y;
+  }
+  let zm=gm/(1.0+sqrt(max(0.0,1.0+gm)));
+  let tau=exp(clamp(-(zm+depression)/h,-14.0,9.0));
+  let weight=transmission*(1.0-exp(-tau*ds/h));
+  // In a plane-parallel column the integral of 1, tau and tau²/2 is
+  // 1, mu and mu². This reproduces the fitted limb law at orbital distance.
+  let v_tau=min(tau,4.0);
+  let source=1.0-b.beta.xyz-b.ring.xyz+(b.beta.xyz+2.0*b.ring.xyz)*v_tau-.5*b.ring.xyz*v_tau*v_tau;
+  let thermal=pow(vec3<f32>(max(.01,1.0-deficit)),vec3<f32>(.87,1.0,1.16));
+  emission+=weight*max(source,vec3<f32>(.01))*thermal;
+  magnetic+=weight*clamp(deficit/.68,0.0,1.0);
+  moment+=weight*at;transmission-=weight;t+=ds;
+ }
+ let cover=1.0-transmission;
+ return PhotosphericColumn(vec4<f32>(emission,cover),moment/max(cover,1e-8),magnetic/max(cover,1e-8));
+}
+
+fn opacity_weighted_distance(a:f32,t:f32,b:f32,u:f32,blend:f32)->f32{
+ return mix(a*t,b*u,blend)/max(mix(a,b,blend),1e-8);
+}
+fn near_photosphere(b:Body,o:vec3<f32>,rd:vec3<f32>,along:f32,c2:f32,height:f32,pixel:f32,count:u32,hit:f32)->BodyPixel{
+ let rdf=fixed(b,rd);let eye=fixed(b,o);
+ let column=photospheric_column(b,along,c2,eye,rdf,pixel,count);let opacity=column.color.a;
+ let familiar=b.axes[0].w>.5;let centre=dot(b.air.xyz,vec3<f32>(.2126,.7152,.0722));
+ var surface=vec3<f32>(0);
+ if opacity>.0001{
+  let t=column.distance;
+  let pos=eye+rdf*t;let q=normalize(pos);
+  let g=c2+t*(t-2.0*along);let z=g/(1.0+sqrt(max(0.0,1.0+g)));
+  let near=star_field.eye.xyz+rdf*t-q*z;
+  let mu=clamp(-dot(q,rdf),0.0,1.0);
+  let cell=b.beta.w;let across=max(pixel*t,.018*cell*sqrt(1.0-mu*mu));
+  var detail=vec4<f32>(1,1,1,0);
+  if b.sun.x>.0{
+   detail=star_detail(b,q,mu,across,count,near,granule_warp(q/cell,b.sun.w),false);
+  }
+  // Cooler magnetic gas suppresses quiet-Sun convection. Its own umbral
+  // dots, filaments and light bridges have already contributed in the column.
+  let spectrum=column.color.rgb*mix(detail.rgb,vec3<f32>(1),.88*column.magnetic);
+  surface=b.air.xyz*(spectrum+.05*detail.a*opacity);
+  if familiar{
+   let tint=mix(vec3<f32>(1),b.air.xyz/max(centre,1e-9),.6);
+   let brightness=dot(spectrum,vec3<f32>(.2126,.7152,.0722))/opacity;
+   surface=centre*opacity*(1.5*familiar_disk(brightness,tint)+2.0*vec3<f32>(1,.95,.8)*detail.a);
+  }
+ }
+ let air=star_atmosphere(b,o,rd,hit,pixel,height,c2,count);
+ let air_tint=select(b.air.xyz,vec3<f32>(centre),familiar);
+ return BodyPixel(vec4<f32>(surface*air.w+air.xyz*air_tint,opacity),column.distance*b.center.w);
+}
+fn star(b:Body,rd:vec3<f32>)->BodyPixel{
  // s and radius are sines of angles from the disk's centre: s / sin(angular radius) is the impact parameter over the true
  // radius, exact for a nearby sphere too.
  let to=normalize(b.center.xyz);let s=length(cross(rd,to));let pixel=2.0*v.screen.w/v.screen.y;let radius=max(sin(b.shape.w),pixel);
@@ -683,6 +849,12 @@ fn star(b:Body,rd:vec3<f32>)->vec4<f32>{
  let limb=max(vec3<f32>(0.0),1.0-b.beta.xyz*x-b.ring.xyz*x*x);
  // The active regions: the CPU's, for the star they were computed for (the one with the largest disk); none for another.
  let count=select(0u,min(u32(star_field.star.y),MAX_REGIONS),u32(b.axes[2].w)==u32(star_field.star.x));
+ let column_weight=1.0-smoothstep(.04,.15,height);
+ var column=BodyPixel(vec4<f32>(0),0.0);
+ if column_weight>0.0{
+  column=near_photosphere(b,o,rd,along,c2,height,pixel,count,hit);
+  if column_weight>=1.0{return column;}
+ }
  var gain=limb;var ribbon=0.0;
  // Where along the ray the surface is met (the sphere, until the relief says otherwise), and whether the ray, grazing the
  // sphere, passed over the relief and out again: then it sees past the star, and the horizon has the relief's shape.
@@ -691,7 +863,7 @@ fn star(b:Body,rd:vec3<f32>)->vec4<f32>{
   // The ray and the eye in the star's fixed axes; the point on the photosphere this ray meets and the pixel's footprint there
   // in radii: its distance times the pixel's angle (before 16 November 2026 this used the angle over the disk's angular radius,
   // which is right only from far away and made granules a hundred times too small to draw at 1.01 radii).
-  let rdf=fixed(b,rd);let eye=fixed(b,o);let e=normalize(-rdf);let cell=b.beta.w;let phase=b.sun.w;
+  let rdf=fixed(b,rd);let eye=fixed(b,o);let cell=b.beta.w;let phase=b.sun.w;
   var q=normalize(eye+rdf*hit);var warp=granule_warp(q/cell,phase);
   // Relief (star_depth). `star_field.eye.w`: how many steps the search takes at most where the ray grazes, from the quality
   // preset; 0 for no relief.
@@ -760,9 +932,12 @@ fn star(b:Body,rd:vec3<f32>)->vec4<f32>{
    slope=clamp(slope,-3.0,3.0)*smoothstep(0.02,0.15,lying);
    if slope!=0.0{
     let xs=1.0-clamp((mu-slope*lying)/sqrt(1.0+slope*slope),0.03,1.0);
-    gain=mix(limb,max(vec3<f32>(0.0),1.0-b.beta.xyz*xs-b.ring.xyz*xs*xs),b.sun.x);
+    // The broadband surface emits from a layer. Away from the limb its
+    // contrast follows the local source function; a tilted facet must not look lit from outside.
+    let wall=select(.18*(1.0-smoothstep(.12,.55,mu)),1.0,familiar);
+    gain=mix(limb,max(vec3<f32>(0.0),1.0-b.beta.xyz*xs-b.ring.xyz*xs*xs),wall*b.sun.x);
    }
-   let d=star_detail(b,q,mu,foot,e,count,near,warp);gain*=d.xyz;ribbon=d.w;
+   let d=star_detail(b,q,mu,foot,count,near,warp,true);gain*=d.xyz;ribbon=d.w;
    // The familiar view's mottle: the supergranular network and plage as H-alpha and 304 A pictures show them, cells of 20 to 60 Mm
    // drifting slowly, so the disk is never a smooth ball at any range. Part of the labelled composite, not a white-light feature.
    if familiar{let t=b.sun.w*0.02;
@@ -790,7 +965,10 @@ fn star(b:Body,rd:vec3<f32>)->vec4<f32>{
  // there is. The Sun's activity sign says whether its corona is modelled (every star now: a synthetic one beyond the Sun's).
  let air=star_atmosphere(b,o,rd,reached,pixel,height,c2,count);
  let atmosphere=air.xyz*centre_lum*select(vec3<f32>(1.0),b.air.xyz/max(centre_lum,1e-9),!familiar);
- return vec4<f32>(surface*air.w*shown+atmosphere+glow*(1.0-shown),shown);
+ let radiance=surface*shown*air.w+atmosphere+select(vec3<f32>(0),glow,familiar)*(1.0-shown);
+ let color=mix(vec4<f32>(radiance,shown),column.color,column_weight);
+ let weight=opacity_weighted_distance(shown,max(met,0.0)*R,column.color.a,column.distance,column_weight);
+ return BodyPixel(color,weight);
 }
 // Same quadrature as `aerial` in explorer.wgsl, so a body's rim matches what the single skin draws.
 fn air_along(b:Body,o:vec3<f32>,rd:vec3<f32>,limit:f32,color:vec3<f32>)->vec3<f32>{
@@ -824,6 +1002,170 @@ fn saturn_ring(r:f32)->vec2<f32>{
  return band;
 }
 struct BodyPixel {@location(0) color:vec4<f32>,@location(1) distance:f32}
+
+// Fraction of the solar disk whose rays cross the ring plane inside this edge.
+// Planetary receivers are inside the inner ring cylinder. Project its tangent
+// at the solar azimuth onto the solar disk and integrate the circular segment.
+fn ring_coverage(radius:f32,p:vec3<f32>,sun:vec3<f32>,horizontal:vec2<f32>,
+                 ahead:f32,perp2:f32,solar_angle:f32,span:vec3<f32>)->f32{
+ let radial=sqrt(max(radius*radius-perp2,1.0));let run=radial-ahead;
+ let edge=p.xz+horizontal*run;
+ let normal=normalize(vec3<f32>(p.y*edge.x,run*radial,p.y*edge.y));
+ let angle=-sign(p.y)*dot(sun,normal);
+ // Match the variance of the solar disk convolved with a uniform march segment.
+ let sweep=dot(span,normal)/length(vec2<f32>(run,p.y));
+ let width=sqrt(solar_angle*solar_angle+sweep*sweep/3.0);
+ let x=clamp(angle/max(width,1e-8),-1.0,1.0);
+ if abs(x)>=1.0{return step(0.0,x);}
+ return .5+(asin(x)+x*sqrt(1.0-x*x))/PI;
+}
+fn ring_sunlight(b:Body,p:vec3<f32>,span:vec3<f32>)->f32{
+ if b.ring.y==0.0{return 1.0;}
+ let sun=b.sun.xyz;
+ if abs(sun.y)>b.ring.z && p.y*sun.y>=0.0 && abs(p.y)>.5*abs(span.y){return 1.0;}
+ let horizontal=sun.xz/max(length(sun.xz),1e-8);let ahead=dot(p.xz,horizontal);
+ let perp2=max(0.0,dot(p.xz,p.xz)-ahead*ahead);
+ // Differences of cumulative coverage give disjoint areas, including the
+ // Huygens and Encke gaps. There is no discrete set of solar shadow rays.
+ let edges=array<f32,8>(74658e3,92000e3,117540e3,117820e3,122170e3,133429e3,133749e3,136775e3);
+ let tau=array<f32,7>(.10,1.8,0,.12,.55,0,.55);
+ let elevation=max(abs(sun.y),max(b.ring.z*.5,1e-6));
+ let signed_y=select(-elevation,elevation,sun.y>=0.0);
+ let path=-p.y/signed_y;let xz=p.xz+sun.xz*path;let radius=max(length(xz),1.0);
+ let radial=xz/radius;
+ let width=(abs(path)*b.ring.z/elevation+.5*abs(dot(radial,span.xz-sun.xz*span.y/signed_y)))*.001;
+ let km=radius*.001;
+ let ringlets=.5*ring_noise(km/1400.0)/(1.0+width*width/(1400.0*1400.0))
+            +.3*ring_noise(km/430.0)/(1.0+width*width/(430.0*430.0))
+            +.2*ring_noise(km/130.0)/(1.0+width*width/(130.0*130.0));
+ let optical=(1.0+.7*ringlets)/elevation;
+ var last=ring_coverage(edges[0],p,sun,horizontal,ahead,perp2,b.ring.z,span);
+ var blocked=0.0;
+ for(var i=0u;i<7u;i++){
+  let next=ring_coverage(edges[i+1u],p,sun,horizontal,ahead,perp2,b.ring.z,span);
+  blocked+=max(0.0,next-last)*(1.0-exp(-tau[i]*optical));last=next;
+ }
+ return clamp(1.0-blocked,0.0,1.0);
+}
+
+// All distances below are in metres in the rotating body frame. Density is in
+// inverse pressure scale heights. The map describes the colour and approximate
+// height of the weather. Only detail smaller than its footprint is synthesized.
+fn giant_density(b:Body,p:vec3<f32>,z:f32,weather:f32,detail:f32,footprint:f32)->f32{
+ let ice=b.axes[2].w>=799.0;
+ var top=(weather-0.46)*select(1.35,0.7,ice);
+ var upper=0.0;
+ if detail>0.001{
+  let n=normalize(p);
+  let east=vec3<f32>(n.z,0.0,-n.x);
+  let jet=sin(n.y*34.0+2.0*sin(n.y*7.0));
+  let flow=(jet*b.axes[0].w+0.4*b.axes[1].w)*east;
+  let h=b.air.w;
+  let broad=textureSampleLevel(volume_shape,volume_repeat,p/(h*37.0)+flow*0.23,0.0);
+  let eddy=p/(h*5.7)+broad.rgb*0.65+flow*0.4;
+  let billow=textureSampleLevel(volume_shape,volume_repeat,eddy,0.0);
+  let edge=textureSampleLevel(volume_shape,volume_repeat,eddy*3.71+billow.gbr*.35,0.0).a;
+  // A long integration segment averages over the finer cells along the ray.
+  let billow_band=1.0-smoothstep(.32,1.1,footprint);
+  let edge_band=1.0-smoothstep(.08,.32,footprint);
+  let relief=(broad.r-.5)*1.20+(billow.a-.45)*1.05*billow_band+(edge-.45)*.26*edge_band;
+  let strength=detail*select(1.0,0.48,ice);
+  top+=strength*relief;
+  // Detached cloud heads above the continuous lower deck. Their coverage
+  // and vertical extent are sampled by the same sunward and viewing rays.
+  let updraft=smoothstep(.38,.78,broad.g*.5+mix(.45,billow.a,billow_band)*.5);
+  let layer=(z-top-.45-.55*updraft)/(.23+.29*updraft);
+  upper=strength*updraft*1.9*exp(-layer*layer*1.4);
+ }
+ return upper+2.8*exp(clamp((top-z)*3.2,-14.0,5.5));
+}
+
+fn giant_atmosphere(b:Body,eye:vec3<f32>,ray_dir:vec3<f32>,pixel:f32)->BodyPixel{
+ let a=b.center.w;let h=b.air.w;
+ let axes=vec3<f32>(1.0,a/b.shape.x,1.0);
+ let origin=eye*axes;let scaled_ray=ray_dir*axes;let speed=length(scaled_ray);let d=scaled_ray/speed;
+ let mid=-dot(origin,d);let impact=length(cross(origin,d));
+ let outer=a+5.0*h;
+ if impact>=outer{return BodyPixel(vec4<f32>(0.0),0.0);}
+ let half_chord=sqrt((outer-impact)*(outer+impact));
+ let outside=(length(origin)-outer)*(length(origin)+outer);
+ let start=max(0.0,outside/max(mid+half_chord,1.0)/speed);
+ if outside>=0.0 && mid<=0.0{return BodyPixel(vec4<f32>(0.0),0.0);}
+ var end=(mid+half_chord)/speed;
+ if end<=start{return BodyPixel(vec4<f32>(0.0),0.0);}
+ // Cut the back of the interval only after many optical depths. A camera
+ // already below this level still integrates from its own position outwards.
+ let deep=a-2.5*h;
+ if impact<deep && length(origin)>deep && mid>0.0{
+  end=min(end,(length(origin)-deep)*(length(origin)+deep)/((mid+sqrt((deep-impact)*(deep+impact)))*speed));
+ }
+ if length(origin)<=deep{end=min(end,2.0*h);}
+ let local=1.0-smoothstep(h*.12,h*1.5,max(start,1.0)*pixel);
+ let detail=local*smoothstep(2.0,8.0,v.forward.w);
+ let luma=vec3<f32>(.2126,.7152,.0722);
+ let sun=b.sun.xyz;let mu=dot(ray_dir,sun);
+ let haze_phase=.64+.32*mu*mu+.22*pow(max(mu,0.0),8.0);
+ let haze_beta=b.beta.xyz*h*.42;
+ let quality=clamp(v.icrf[2].w/128.0,.1,1.0);
+ let spacing=mix(.26,.115,quality);
+ var transmission=vec3<f32>(1);var radiance=vec3<f32>(0);var depth=0.0;
+ var last=start;
+ for(var i=0u;i<320u;i++){
+  if last>=end{break;}
+  let front=origin+scaled_ray*last;let radius=max(length(front),1.0);
+  let altitude=(radius-a)/h;
+  let radial=abs(dot(front,scaled_ray))/radius;
+  // March the same local distances on neighbouring rays. A ray which just
+  // misses the deep spheroid must not redistribute all its foreground samples.
+  let clear=smoothstep(1.45,4.0,altitude);
+  let step_h=spacing*clamp(exp(min(altitude,0.0)*1.7),.01,1.0)
+       +clear*(.38+1.25/(1.0+7.0*radial));
+  let late=max(0.0,(f32(i)-170.0)/55.0);
+  let ds=min(end-last,h*step_h*(1.0+late*late));
+  let t=last+ds*.5;last+=ds;
+  let p=eye+ray_dir*t;
+  let z=(length(p*axes)-a)/h;
+  let normal=normalize(p*axes*axes);
+  let sun_up=dot(normal,sun);
+  let local_albedo=map_sample(b,normalize(p*axes),pixel*max(t,h)/a);
+  let footprint=max(pixel*t,ds*.5)/h;
+  let weather=dot(local_albedo,luma);
+  let deck=giant_density(b,p,z,weather,detail,footprint);
+  let haze=haze_beta*exp(clamp(-z,-8.0,5.0));
+  let extinction=haze+deck;
+  let absorbed=transmission*(1.0-exp(-extinction*(ds/h)));
+  let day=smoothstep(-0.09,0.04,sun_up);
+  var direct=0.0;
+  var ring=1.0;
+  if day>0.0{
+   ring=ring_sunlight(b,p,ray_dir*ds);
+   // Slant column above the sample, with a curved-path limit at the limb.
+   let slant=inverseSqrt(sun_up*sun_up+2.0*h/a);
+   var cloud_tau=deck*.3125*slant;
+   let shadow_weight=detail*smoothstep(.002,.035,deck)*(1.0-smoothstep(14.0,30.0,deck))*smoothstep(.0005,.008,ring);
+   if shadow_weight>.001{
+    // Integrate the crest blocking this beam with Simpson 3/8 quadrature.
+    let reach=min(3.0*h,h*slant*.8);
+    let p1=p+sun*(reach/3.0);let p2=p+sun*(reach*2.0/3.0);let p3=p+sun*reach;
+    let d1=giant_density(b,p1,(length(p1*axes)-a)/h,weather,detail,footprint);
+    let d2=giant_density(b,p2,(length(p2*axes)-a)/h,weather,detail,footprint);
+    let d3=giant_density(b,p3,(length(p3*axes)-a)/h,weather,detail,footprint);
+    cloud_tau=mix(cloud_tau,(deck+3.0*d1+3.0*d2+d3)*(reach/(8.0*h))+d3*.3125*slant,shadow_weight);
+   }
+   direct=ring*exp(-min(20.0,cloud_tau+dot(haze,vec3<f32>(.3333))*slant));
+  }
+  // Diffuse scattering fills the shadow from neighbouring sunlit columns.
+  let fill=day*(.035+.36*sqrt(max(sun_up,0.0)))*(.38+.62*ring)*exp(min(z,0.0)*.72);
+  let cloud_light=local_albedo*(fill+day*direct*(.78+.30*max(mu,0.0)));
+  let haze_light=b.air.xyz*(.40*fill+day*direct*haze_phase);
+  radiance+=absorbed*(cloud_light*deck+haze_light*haze)/max(extinction,vec3<f32>(1e-9));
+  depth+=dot(absorbed,vec3<f32>(.333333))*t;
+  transmission-=absorbed;
+  if max(transmission.x,max(transmission.y,transmission.z))<.004{break;}
+ }
+ let opacity=clamp(1.0-dot(transmission,vec3<f32>(1.0/3.0)),0.0,1.0);
+ return BodyPixel(vec4<f32>(radiance*v.starlight.xyz*b.sun.w,opacity),depth/max(opacity,1e-6));
+}
 // An asteroid close up: a lumpy radial surface, ray marched. Its orbit and size are real; this shape is not, as almost
 // none has been measured. Low frequencies for the lobes, finer ones for the ground, and pits for craters. Seeded per body.
 fn rock_hash(c:vec3<f32>,seed:f32)->f32{return fract(sin(dot(c,vec3<f32>(127.1,311.7,74.7))+seed*13.7)*43758.5453);}
@@ -868,9 +1210,27 @@ fn rock(b:Body,rd:vec3<f32>,pixel:f32)->BodyPixel{
  let color=vec3<f32>(1.0,0.96,0.9)*mottled*(vec3<f32>(1.8,1.55,1.3)*v.starlight.xyz*lit*b.sun.w+vec3<f32>(0.004));
  return BodyPixel(vec4<f32>(color,1.0),max(t*radius,1.0));
 }
+@group(1) @binding(0) var giant_color:texture_2d<f32>;
+@group(1) @binding(1) var giant_distance:texture_2d<f32>;
+
+@fragment fn giant_march(q:Quad)->BodyPixel{
+ let b=bodies[q.body];let size=vec2<f32>(v.icrf[0].w,v.icrf[1].w);
+ let rd=ray(q.clip.xy*v.screen.xy/size);
+ return giant_atmosphere(b,fixed(b,-b.center.xyz),fixed(b,rd),2.0*v.screen.w/v.screen.y);
+}
 @fragment fn body_fragment(q:Quad)->BodyPixel{
+ return draw_body(q,BodyPixel(vec4<f32>(0),0.0),false);
+}
+@fragment fn giant_composite(q:Quad)->BodyPixel{
+ let size=vec2<f32>(textureDimensions(giant_color));
+ let uv=clamp(q.clip.xy/v.screen.xy,0.5/size,1.0-0.5/size);
+ let gas=textureSampleLevel(giant_color,map_sampler,uv,0.0);
+ let depth=textureLoad(giant_distance,vec2<i32>(uv*size),0).x;
+ return draw_body(q,BodyPixel(gas,depth),true);
+}
+fn draw_body(q:Quad,cached:BodyPixel,has_cache:bool)->BodyPixel{
  let b=bodies[q.body];let rd=ray(q.clip.xy);let pixel=2.0*v.screen.w/v.screen.y;
- if b.shape.z==FLAG_STAR{let s=star(b,rd);return BodyPixel(s,select(0.0,length(b.center.xyz),s.w>0.5));}
+ if b.shape.z==FLAG_STAR{let s=star(b,rd);return BodyPixel(s.color,select(0.0,max(s.distance,1.0),s.color.a>.5));}
  if b.shape.z==FLAG_ROCK{return rock(b,rd,pixel);}
  let eye=-b.center.xyz;let distance=length(eye);
  // Below a pixel the disk is a point of the same total light, not one that vanishes.
@@ -880,20 +1240,20 @@ fn rock(b:Body,rd:vec3<f32>,pixel:f32)->BodyPixel{
  let dd=dot(d,d);let bb=dot(o,d);let cc=dot(o,o)-1.0;let det=bb*bb-dd*cc;
  var color=vec3<f32>(0);var alpha=0.0;var hit=-1.0;
  let surface_pass=b.shape.z==FLAG_ACTIVE;
- if det>0.0&&bb<0.0&&cc>0.0{
+ let volume=b.shape.z==FLAG_GIANT && b.shape.w>pixel*.75;
+ var volume_depth=0.0;
+ if volume{
+  var gas=cached;
+  if !has_cache{gas=giant_atmosphere(b,fixed(b,eye),fixed(b,rd),pixel);}
+  color=gas.color.rgb;alpha=gas.color.a;volume_depth=gas.distance;
+  if alpha>0.0{hit=volume_depth;}
+ }else if det>0.0&&bb<0.0&&cc>0.0{
   hit=cc/(-bb+sqrt(det));
   let p=normalize(o+d*hit);let n=normalize(p/vec3<f32>(a,c,a));
   let albedo=map_sample(b,p,pixel*distance/max(a,1.0));
   var light=max(0.0,dot(n,b.sun.xyz));
   // The rings' shadow on the planet, soft across the width of the Sun as seen from there.
-  if b.ring.y>0.0&&light>0.0&&abs(b.sun.y)>1e-4{
-   let q=p*vec3<f32>(true_radius,b.shape.x,true_radius);let t=-q.y/b.sun.y;
-   if t>0.0{
-    let at=q+b.sun.xyz*t;let r=length(at);let penumbra=t*b.ring.z;var through=0.0;
-    for(var i=0;i<5;i++){let band=saturn_ring(r+(f32(i)-2.0)*0.5*penumbra);through+=exp(-band.x/abs(b.sun.y))*0.2;}
-    light*=mix(0.03,1.0,through);
-   }
-  }
+  if b.ring.y>0.0 && light>0.0{light*=ring_sunlight(b,p*vec3<f32>(true_radius,b.shape.x,true_radius),vec3<f32>(0));}
   color=albedo*vec3<f32>(1.8,1.55,1.3)*v.starlight.xyz*light*b.sun.w;
   if b.ring.w>0.5&&!surface_pass{color=far_cloud(b,p,n,rd,pixel*distance/max(a,1.0),color);}
   color*=fade;
@@ -904,23 +1264,23 @@ fn rock(b:Body,rd:vec3<f32>,pixel:f32)->BodyPixel{
   if scale>1.0{color*=alpha;alpha*=fade;color/=max(alpha,1e-6);}
  }
  var inside=false;
- if det>0.0&&cc<=0.0{inside=true;alpha=1.0;hit=0.0;}
+ if !volume&&det>0.0&&cc<=0.0{inside=true;alpha=1.0;hit=0.0;}
  var limit=1e30;if hit>0.0{limit=hit;}
  // A body with its own surface pass draws nothing but its disk here, under the mesh.
- if b.air.w>0.0&&!surface_pass{
+ if !volume && b.air.w>0.0&&!surface_pass{
   let lit=air_along(b,eye,rd,limit,color*alpha);
   let reach=b.center.w+b.beta.w;let s=length(cross(rd,normalize(b.center.xyz)));
   let seen=dot(rd,normalize(b.center.xyz))>0.0||distance<reach;
   if seen{color=lit;}else{color=color*alpha;}
   if alpha<=0.0&&seen{alpha=clamp(1.0-exp(-(lit.x+lit.y+lit.z)*8.0),0.0,1.0)*0.0;}
   if inside{alpha=1.0;}
- }else{color*=alpha;}
+ }else if !volume{color*=alpha;}
  // Rings: in the body's own plane, in front of it or behind it. Lit by the Sun, dark in the planet's shadow.
  if b.ring.y>0.0{
   let m=fixed(b,eye);let e=fixed(b,rd);
   if abs(e.y)>1e-6{
    let t=-m.y/e.y;
-   if t>0.0&&(hit<0.0||t<hit*length(o)/max(length(o),1e-6)||hit*a*length(d)<0.0||t<hit){
+   if t>0.0&&(hit<0.0||t<hit||(volume&&alpha<0.999)){
     let at=m+e*t;let r=length(at);let band=saturn_ring(r);
     if band.x>0.0{
      // Slant through a thin sheet: the tilt to the eye sets how much of it the eye looks through.
@@ -932,14 +1292,16 @@ fn rock(b:Body,rd:vec3<f32>,pixel:f32)->BodyPixel{
      // Planet's shadow on the ring.
      let shadowed=oblate_shadow(at,b.sun.xyz,true_radius,b.shape.x);
      let tone=vec3<f32>(0.92,0.84,0.72)*band.y*vec3<f32>(1.8,1.55,1.3)*v.starlight.xyz*0.6*select(1.0,0.02,shadowed)*b.sun.w*through;
-     color=tone*opacity+color*(1.0-opacity);alpha=opacity+alpha*(1.0-opacity);
+     if volume && hit>0.0 && t>=hit{color+=tone*opacity*(1.0-alpha);}
+     else{color=tone*opacity+color*(1.0-opacity);if opacity>.5{volume_depth=t;}}
+     alpha=opacity+alpha*(1.0-opacity);
     }
    }
   }
  }
  if alpha<=0.0&&dot(color,color)<=0.0{discard;}
  // A body with its own surface pass stands behind that surface, so it claims no distance. Otherwise this is a lower bound of the nearest point on the disk, enough to order two separate bodies.
- return BodyPixel(vec4<f32>(color,alpha),select(0.0,max(distance-true_radius,1.0),alpha>0.5&&!surface_pass));
+ return BodyPixel(vec4<f32>(color,alpha),select(0.0,max(select(distance-true_radius,volume_depth,volume),1.0),alpha>0.5&&!surface_pass));
 }
 struct Point {@builtin(position) clip:vec4<f32>,@location(0) color:vec3<f32>,@location(1) at:vec2<f32>}
 // The sky behind everything, in inertial axes: it turns only as the eye's axes do.
@@ -951,7 +1313,10 @@ struct SkyQuad {@builtin(position) clip:vec4<f32>}
  let d=v.icrf[0].xyz*rd.x+v.icrf[1].xyz*rd.y+v.icrf[2].xyz*rd.z;
  // The level for this view: map texels per pixel, near the middle of a face. Level 1 keeps it from sparkling when it is minified.
  let level=clamp(log2(max(2.0*v.screen.w/v.screen.y*2048.0/2.0,1.0)),0.0,1.0);
- return BodyPixel(vec4<f32>(textureSampleLevel(sky_map,map_sampler,d,level).rgb*v.tone.z,0),0.0);
+ // The diffuse survey and catalogue point flux use different units. Preserve
+ // the dust lanes in the survey when a photographic exposure opens for space.
+ let survey=textureSampleLevel(sky_map,map_sampler,d,max(level,v.starlight.w)).rgb*v.tone.z;
+ return BodyPixel(vec4<f32>(survey*select(1.0,80.0*v.tone.x,v.tone.x>=0.0),0),0.0);
 }
 // The brightest stars are points of light on the pixel grid, over the same stars in the map: a small splat of fixed width in
 // pixels, placed to a fraction of a pixel. Brightness: a magnitude's flux compressed by a power, as a long photographic exposure
@@ -965,7 +1330,8 @@ fn star_splat(id:u32,direction:vec3<f32>,magnitude:f32,tint:vec3<f32>)->Point{
  let sigma=0.55+0.5*max(0.0,2.5-magnitude)*0.28;let reach=sigma*3.2;
  let c=vec2<f32>(dot(d,v.right.xyz)/(v.screen.z*v.screen.w),dot(d,v.up.xyz)/v.screen.w)/z+corners[id]*reach/v.screen.xy*2.0;
  // In units of sigma, for the fragment.
- return Point(vec4<f32>(c+projection_offset(),0,1),tint*min(flux,4.0),corners[id]*3.2);
+ let catalog_flux=pow(10.0,-0.4*(magnitude-1.0))*0.62*v.tone.x/(sigma*sigma);
+ return Point(vec4<f32>(c+projection_offset(),0,1),tint*select(min(flux,4.0),catalog_flux,v.tone.x>=0.0),corners[id]*3.2);
 }
 @vertex fn star_vertex(@builtin(vertex_index) id:u32,@builtin(instance_index) index:u32)->Point{
  let s=stars[index*2u];let motion=stars[index*2u+1u];let bits=u32(motion.w);
@@ -995,7 +1361,7 @@ fn asteroid_position(i:u32)->vec3<f32>{
  let magnitude=asteroids[id*3u+1u].w+5.0*log(r*delta)/log(10.0)+0.03*phase;
  let flux=pow(10.0,-0.4*(magnitude-1.0))*0.09*pow(10.0,0.4*v.tone.w);
  let c=vec2<f32>(dot(d,v.right.xyz)/(v.screen.z*v.screen.w),dot(d,v.up.xyz)/v.screen.w)/z;
- return AsteroidPoint(vec4<f32>(c+projection_offset(),0,1),vec3<f32>(1.0,0.92,0.82)*min(flux,1.5));
+ return AsteroidPoint(vec4<f32>(c+projection_offset(),0,1),vec3<f32>(1.0,0.92,0.82)*select(min(flux,1.5),flux*v.tone.x,v.tone.x>=0.0));
 }
 @fragment fn asteroid_fragment(p:AsteroidPoint)->BodyPixel{return BodyPixel(vec4<f32>(p.color,0),0.0);}
 // What the points cannot show: the far more numerous bodies and the dust they make, as a glow integrated along the ray through
@@ -1019,7 +1385,7 @@ fn belt_density(r:f32,z:f32)->f32{
   let ds=(end-start)/16.0;
   for(var i=0;i<16;i++){let p=o+d*(start+(f32(i)+0.5)*ds);let r=length(p);let z=dot(p,pole);light+=belt_density(r,z)*ds/(r*r+0.5);}
  }
- return BodyPixel(vec4<f32>(vec3<f32>(1.0,0.9,0.76)*light*0.000012*pow(10.0,0.4*v.tone.w),0),0.0);
+ return BodyPixel(vec4<f32>(vec3<f32>(1.0,0.9,0.76)*light*.000012*pow(10.0,.4*v.tone.w)*select(1.0,v.tone.x,v.tone.x>=0.0),0),0.0);
 }
 // Orbit trails, a thin antialiased line in screen pixels over one orbit. The line is real geometry, so its true distance is compared
 // with every body along the ray at each fragment, and a body in front hides it. A line in front of the body in the surface pass is
@@ -1060,16 +1426,42 @@ const TRAIL_PIXELS:f32=1.1;
  var tint=vec3<f32>(0.62,0.80,1.0);if kind>0.5&&kind<1.5{tint=vec3<f32>(0.62,0.86,0.72);}if kind>1.5{tint=vec3<f32>(1.0,0.76,0.36);}
  return TrailPoint(vec4<f32>(c+projection_offset(),0,1),vec4<f32>(tint,strength),reach,length(p.xyz)/w,1.0/w);
 }
+// Fade an orbit guide through the air between its point and the eye. Both
+// endpoints matter: a guide on this side of the cloud deck is still visible.
+fn giant_guide_transmission(body:Body,rd:vec3<f32>,far:f32)->f32{
+ let a=body.center.w;let h=body.air.w;let axes=vec3<f32>(1,a/body.shape.x,1);
+ let o=fixed(body,-body.center.xyz)*axes;let ray=fixed(body,rd)*axes;
+ let speed=length(ray);let d=ray/speed;let mid=-dot(o,d);let reach=far*speed;
+ let nearest=length(o+d*clamp(mid,0.0,reach));let outer=a+5.0*h;
+ if nearest>=outer{return 1.0;}if nearest<a-h{return 0.0;}
+ let impact=length(cross(o,d));let chord=sqrt(max(0.0,(outer-impact)*(outer+impact)));
+ let start=max(0.0,mid-chord);let end=min(reach,mid+chord);let ds=(end-start)/16.0;
+ if ds<=0.0{return 1.0;}
+ let haze=dot(body.beta.xyz,vec3<f32>(.14))*h;
+ var tau=0.0;
+ for(var j=0u;j<16u;j++){
+  let z=(length(o+d*(start+(f32(j)+.5)*ds))-a)/h;
+  tau+=(haze*exp(-z)+2.8*exp(-3.2*z))*ds/(h*speed);
+ }
+ return exp(-tau);
+}
 @fragment fn trail_fragment(t:TrailPoint)->BodyPixel{
- let rd=ray(t.clip.xy);let far=t.far_over_z/t.over_z;
+ let rd=ray(t.clip.xy);let far=t.far_over_z/t.over_z;var transmission=1.0;
  for(var i=0u;i<u32(v.eye_sun.w);i++){
-  let c=bodies[i].center;let along=dot(c.xyz,rd);if along<=0.0||bodies[i].shape.z==FLAG_ROCK{continue;}
+  let body=bodies[i];let c=body.center;
+  if body.shape.z==FLAG_GIANT && body.shape.w>.003{
+   transmission*=giant_guide_transmission(body,rd,far);if transmission<.001{discard;}continue;
+  }
+  let along=dot(c.xyz,rd);if along<=0.0||body.shape.z==FLAG_ROCK{continue;}
   let off=length(cross(c.xyz,rd));if off>=c.w{continue;}
   // Nearest point of the sphere along this ray, and the line's own distance there.
   if along-sqrt(c.w*c.w-off*off)<far{discard;}
  }
  let edge=1.0-smoothstep(TRAIL_PIXELS-0.5,TRAIL_PIXELS+0.5,abs(t.across));
- return BodyPixel(vec4<f32>(t.color.xyz*t.color.w*edge*0.55,0),0.0);
+ // Navigation overlays carry no stellar luminosity. In the inner system
+ // compensate for the daylight multiplier before the common HDR finish.
+ let overlay=select(1.0,min(1.0,v.tone.x/.00003),v.tone.x>=0.0);
+ return BodyPixel(vec4<f32>(t.color.xyz*t.color.w*edge*.55*overlay*transmission,0),0.0);
 }
 // Rocks of Saturn's rings, around the eye, in nested shells of a lattice in the ring's frame: each cell holds at most one, by the
 // published optical depth at that radius. All are synthesized. Each shell's rocks are in proportion to its cells, so a far rock is a

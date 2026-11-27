@@ -117,6 +117,9 @@ function syncQualityUi(s){
  $('cloud-far-distance').value=s.cloud_far_distance;$('cloud-far-distance-value').textContent=(s.cloud_far_distance/1000).toFixed(0)+' km';
  $('cloud-refresh').value=s.cloud_refresh;$('cloud-refresh-value').textContent=s.cloud_refresh===1?'every texel each frame':`1/${s.cloud_refresh} per frame`;
  $('shadows').checked=s.shadows;$('water-reflections').checked=s.water_reflections;$('bloom').checked=s.bloom;$('lens-flare').checked=s.lens_flare;$('auto-exposure').checked=s.auto_exposure;
+ $('spacecraft-camera').checked=s.spacecraft_camera;
+ const ev=Math.log2(s.exposure/1.3);$('camera-ev').value=String(ev);$('camera-ev-value').textContent=ev.toFixed(2)+' EV';
+ if($('solar-star-adapt'))$('solar-star-adapt').disabled=s.spacecraft_camera;
  for(const [id,key,format] of [['shadow-steps','shadow_steps',v=>v],['shadow-cascades','shadow_cascades',v=>v],['profile-quality','profile_quality',v=>Math.round(v*100)+'%'],['atmosphere-steps','atmosphere_steps',v=>v],['water-bands','water_bands',v=>v],['relief-steps','relief_steps',v=>v]]){$(id).value=s[key];$(id+'-value').textContent=format(s[key]);}
 }
 function applyPreset(name){if(!PRESETS[name])return Promise.resolve();try{localStorage.setItem('solar.skin.quality',name);}catch{}return configure({...PRESETS[name]});}
@@ -125,8 +128,9 @@ $('render-scale').onchange=()=>configure({render_scale:Number($('render-scale').
 $('cloud-far-scale').onchange=()=>configure({cloud_far_scale:Number($('cloud-far-scale').value)}).catch(fail);
 $('cloud-far-distance').oninput=()=>configure({cloud_far_distance:Number($('cloud-far-distance').value)}).catch(fail);
 $('cloud-refresh').oninput=()=>configure({cloud_refresh:Number($('cloud-refresh').value)}).catch(fail);
-for(const [id,key] of [['shadows','shadows'],['water-reflections','water_reflections'],['bloom','bloom'],['lens-flare','lens_flare'],['auto-exposure','auto_exposure']])$(id).onchange=()=>configure({[key]:$(id).checked}).catch(fail);
+for(const [id,key] of [['shadows','shadows'],['water-reflections','water_reflections'],['bloom','bloom'],['lens-flare','lens_flare'],['auto-exposure','auto_exposure'],['spacecraft-camera','spacecraft_camera']])$(id).onchange=()=>configure({[key]:$(id).checked}).catch(fail);
 for(const [id,key] of [['shadow-steps','shadow_steps'],['shadow-cascades','shadow_cascades'],['atmosphere-steps','atmosphere_steps'],['water-bands','water_bands'],['relief-steps','relief_steps']])$(id).oninput=()=>configure({[key]:Number($(id).value)}).catch(fail);
+$('camera-ev').oninput=()=>configure({exposure:1.3*2**Number($('camera-ev').value)}).catch(fail);
 $('profile-quality').oninput=()=>configure({profile_quality:Number($('profile-quality').value)}).catch(fail);
 for(const id of ['cloud-wind','cloud-direction'])$(id).oninput=()=>{const angle=Number($('cloud-direction').value)*Math.PI/180,speed=Number($('cloud-wind').value);configure({wind:[speed*Math.cos(angle),speed*Math.sin(angle)]}).catch(fail);};
 // Track the projection used by the worker for labels and the next flight packet.
